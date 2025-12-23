@@ -34,16 +34,52 @@
 
 ## Usage
 
-### CLI Mode
-Run the `lyricsync.py` script directly:
+### Quick Start: Lyric Video
+To generate a lyric video, you **must** provide at least one background image.
 
 ```bash
-# Basic usage
-python lyricsync.py --audio song.mp3 --lyrics lyrics.txt
-
-# Specify device (CPU or CUDA)
-python lyricsync.py --audio song.mp3 --lyrics lyrics.txt --device cuda
+python lyricsync.py --audio song.mp3 --lyrics lyrics.txt --preview-image cover.jpg
 ```
+This generates `preview.mp4` with burned-in subtitles.
+
+### CLI Usage Guide
+
+**Basic Command**
+```bash
+python lyricsync.py \
+  --audio "path/to/song.mp3" \
+  --lyrics "path/to/lyrics.txt" \
+  --preview-image "path/to/image.jpg"
+```
+
+**Customizing the Output**
+- **Resolution**: Force a specific resolution (default 1920:1080).
+  ```bash
+  --force-res 1080:1920  # for TikTok/Shorts/Reels
+  ```
+- **Visual Effects**: Add motion to your background image.
+  ```bash
+  --effect zoom --effect-strength 0.05
+  ```
+- **Styles**: Change how lyrics are rendered.
+  ```bash
+  --style rainbow-cycle  # karaoke-style individual word highlighting
+  --style credits        # scrolling end-credits style
+  ```
+
+**Advanced Options**
+- **Vocal Separation**: Isolate vocals before transcribing for better accuracy.
+  ```bash
+  --separate vocals --demucs-model htdemucs
+  ```
+- **Multiple Images**: Create a slideshow by repeating the argument.
+  ```bash
+  --preview-image img1.jpg --preview-image img2.jpg --image-fade-seconds 1.0
+  ```
+- **Hardware Acceleration**: Use CUDA if you have an NVIDIA GPU.
+  ```bash
+  --device cuda
+  ```
 
 ### Web App
 To launch the interactive web interface:
