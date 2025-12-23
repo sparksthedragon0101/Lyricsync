@@ -1,0 +1,36 @@
+# Core Lyricsync CLI Dependencies
+demucs
+openai-whisper
+tqdm
+mutagen
+fonttools
+requests
+
+# Web App Dependencies (from lyricsync_web/requirements.txt)
+fastapi==0.115.2
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-core==2.23.4
+httpx==0.25.2
+python-multipart==0.0.9
+Jinja2==3.1.4
+
+# ML / Audio Stack
+# Note: Adjust torch version for your specific CUDA/CPU needs.
+torch==2.6.0+cu126 --extra-index-url https://download.pytorch.org/whl/cu126
+torchvision==0.21.0+cu126 --extra-index-url https://download.pytorch.org/whl/cu126
+torchaudio==2.6.0+cu126 --extra-index-url https://download.pytorch.org/whl/cu126
+
+diffusers==0.30.3
+transformers==4.46.2
+accelerate==1.1.0
+safetensors==0.4.5
+
+# Image Processing
+pillow==10.4.0
+opencv-python==4.10.0.84
+
+# Utilities
+colorama==0.4.6
+ollama==0.1.7
+srt==3.5.3

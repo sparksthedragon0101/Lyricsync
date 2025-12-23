@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Default",
+    "slug": "default",
+    "font": "Arial",
+    "font_file_name": null,
+    "font_size": 20,
+    "outline": 2,
+    "font_color": "#FFFFFF",
+    "outline_color": "#000000",
+    "thanks_color": "#FFFFFF",
+    "thanks_border_color": "#000000"
+  },
+  {
+    "name": "Basic Western Theme",
+    "slug": "default",
+    "font": "Arial",
+    "font_file_name": "Future West.ttf",
+    "font_size": 20,
+    "outline": 2,
+    "font_color": "#FFFFFF",
+    "outline_color": "#000000",
+    "thanks_color": "#FFFFFF",
+    "thanks_border_color": "#000000"
+  },
+  {
+    "name": "Pink Pig",
+    "slug": "default",
+    "font": "Arial",
+    "font_file_name": "OldLondonAlternate.ttf",
+    "font_size": 26,
+    "outline": 2,
+    "font_color": "#F316B8",
+    "outline_color": "#000000",
+    "thanks_color": "#F316B8",
+    "thanks_border_color": "#000000"
+  }
+]

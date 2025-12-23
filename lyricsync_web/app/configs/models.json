@@ -1,0 +1,10 @@
+[
+{
+  "id": "dreamshaperxl",
+  "type": "sdxl",
+  "path": "/app/models/base/dreamshaperXL.safetensors",
+  "vae": null,
+  "default_precision": "fp16",
+  "tags": ["photoreal", "general", "stylized", "anime"]
+}
+]

@@ -1,0 +1,34 @@
+# Core runtime
+fastapi==0.115.2
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-core==2.23.4
+ httpx==0.25.2  # pinned for ollama compat (<0.26)
+python-multipart==0.0.9
+Jinja2==3.1.4
+
+# Torch (CUDA 12.6 build by default; adjust index URL if targeting CPU/other CUDA)
+# NOTE: cu126 wheels exist starting at torch 2.6.x; pin accordingly
+torch==2.6.0+cu126
+torchvision==0.21.0+cu126
+torchaudio==2.6.0+cu126
+# For CPU builds use torch/vision/audio without +cu*, and set index to https://download.pytorch.org/whl/cpu
+
+# Hugging Face / Diffusion stack
+diffusers==0.30.3
+transformers==4.46.2
+accelerate==1.1.0
+safetensors==0.4.5
+
+# Image utilities
+pillow==10.4.0
+opencv-python==4.10.0.84
+
+# Optional but nice-to-have (progress bars, model caching, etc.)
+tqdm==4.66.4
+requests==2.32.3
+
+# Keep logs clean
+colorama==0.4.6
+ollama==0.1.7
+srt==3.5.3

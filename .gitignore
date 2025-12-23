@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Environment Variables
+.env
+.env.*
+
+# IDE Settings
+.idea/
+.vscode/
+
+# Project Specific
+output/
+ls_tmp_short/
+__init__.py
+server run command.txt
+
+# Media Files (Exclude large/copyrighted assets)
+*.mp3
+*.mp4
+*.wav
+*.png
+*.jpg
+!app/static/images/  # Example if you want to keep some static assets
+!app/favicon.ico
+
+# Fonts (if you don't have distribution rights)
+FontZips/
+# fonts/ # Keeping fonts if they are OFL/Free, otherwise uncomment to ignore
+fonts/
+
+# OS Files
+Thumbs.db
+.DS_Store
+
+# User-specific data
+official_lyrics.txt
+projects/
+archives/

@@ -1,0 +1,41 @@
+.wavesurfer-container {
+  position: relative;
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+}
+.wavesurfer-timeline {
+  width: 100%;
+  font-size: 0.75rem;
+  margin-top: 8px;
+}
+.wavesurfer-marks {
+  position: absolute;
+  z-index: 1;
+}
+.wavesurfer-curve {
+  width: 100%;
+  height: 100%;
+}
+.wavesurfer-bar {
+  fill: #4f76c0;
+  opacity: 0.8;
+}
+.wavesurfer-progress {
+  fill: #7aa2f7;
+}
+.wavesurfer-cursor {
+  stroke: #ff7b7b;
+  stroke-width: 1;
+}
+.wavesurfer-region {
+  fill: rgba(112, 138, 200, 0.2);
+  stroke: rgba(72, 102, 194, 0.6);
+  touch-action: none;
+}
+.wavesurfer-region.story-region,
+.wavesurfer-region[data-story="true"],
+.wavesurfer-region[data-type="story"] {
+  display: none !important;
+  pointer-events: none !important;
+}

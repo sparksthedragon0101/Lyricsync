@@ -1,0 +1,2170 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel project-panel">
+  <h2>Project: {{p.slug}}</h2>
+
+  <div class="project-workspace">
+    <aside class="artifacts-sidebar">
+      <section class="card-section artifacts-card">
+        <h3>Artifacts</h3>
+        <ul>
+          <li>Audio: {{ "present" if meta.audio else "missing" }} {% if meta.audio %}- <a
+              href="/api/projects/{{p.slug}}/download/audio">download</a> {% endif %}</li>
+          <li>Official lyrics.txt: {{ "present" if meta.official_txt else "missing" }}</li>
+          <li>Aligned SRT: {% if meta.aligned_srt %}<a
+              href="/api/projects/{{p.slug}}/download/aligned.srt">aligned.srt</a>{% else %}missing{% endif %}</li>
+          <li>Edited SRT: {% if meta.edited_srt %}<a
+              href="/api/projects/{{p.slug}}/download/edited.srt">edited.srt</a>{% else %}missing{% endif %}</li>
+          <li>Preview: {% if meta.preview_mp4 %}present{% else %}missing{% endif %}</li>
+        </ul>
+        <div class="project-cta-row">
+          <div class="project-cta-row__primary">
+            <button id="btnPasteLyrics" type="button" class="btn">Paste Lyrics</button>
+            <span style="opacity:.75;font-size:.9em;">Clean, preview, and save new lyrics directly to this
+              project.</span>
+          </div>
+          <div class="cover-upload-row">
+            <strong class="cover-upload-label">Background Image</strong>
+            <input type="file" id="cover-file" accept="image/*" class="cover-upload-input">
+            <button id="btnCoverUpload" type="button">Upload Image</button>
+            <span id="cover-status" class="cover-upload-status"></span>
+          </div>
+        </div>
+      </section>
+      <!-- ===== Preview lives UNDER Artifacts, same column ===== -->
+      <section id="preview-section" class="card-section preview-card">
+        <h3 style="margin:0 0 8px">Preview</h3>
+        <div id="preview-wrap" class="card">
+          <video id="ui-video" controls preload="metadata" playsinline></video>
+
+          <div class="preview-actions">
+            <a id="ui-video-download" href="/api/projects/{{p.slug}}/download/preview.mp4" download>Download MP4</a>
+            <a id="ui-video-open" href="/api/projects/{{p.slug}}/download/preview.mp4" target="_blank"
+              rel="noopener">Open in new tab</a>
+            <span id="ui-video-status" style="opacity:.8;font-size:.9em"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== end preview ===== -->
+    </aside>
+
+    <div class="workspace-main">
+      <div class="tabs main-tabs tab-group" data-tab-group="workspace-tabs">
+        <button type="button" class="tab-btn active" data-tab-group="workspace-tabs"
+          data-tab="workspace-settings">Settings & Alignment</button>
+        <button type="button" class="tab-btn" data-tab-group="workspace-tabs" data-tab="workspace-images">Image
+          Generator</button>
+        <button type="button" class="tab-btn" data-tab-group="workspace-tabs" data-tab="workspace-review">Media &
+          Review</button>
+      </div>
+
+      <div id="workspace-settings" class="main-tab-panel tab-panel active" data-tab-group="workspace-tabs">
+        <section id="col-right" class="card-section">
+          <div>
+            <form id="render-form">
+              <div class="tabs tab-group" data-tab-group="render-tabs">
+                <button type="button" class="tab-btn active" data-tab-group="render-tabs"
+                  data-tab="tab-lyrics">Lyrics</button>
+                <button type="button" class="tab-btn" data-tab-group="render-tabs" data-tab="tab-effects">
+                  Effects <span id="tab-badge-effects" class="tab-badge" hidden>●</span>
+                </button>
+                <button type="button" class="tab-btn" data-tab-group="render-tabs" data-tab="tab-images">Images</button>
+              </div>
+
+              <!-- Lyrics panel -->
+              <div id="tab-lyrics" class="tab-panel active" data-tab-group="render-tabs">
+                <h3>Actions</h3>
+                <div class="render-options">
+                  <label>
+                    <input type="checkbox" id="ui-show-title" checked>
+                    Title card
+                  </label>
+
+                  <label>
+                    <input type="checkbox" id="ui-use-mp3-title" checked>
+                    Use MP3 title text
+                  </label>
+
+                  <hr>
+
+                  <div class="grid2">
+                    <div>
+                      <label for="ui-style">Style</label>
+                      <select id="ui-style">
+                        <option value="burn-srt" selected>Burn SRT</option>
+                      </select>
+                    </div>
+                    <div class="theme-column">
+                      <label for="ui-theme">Text Theme</label>
+                      <select id="ui-theme" data-default="default">
+                        <option value="default">Loading themes…</option>
+                      </select>
+                      <div class="theme-controls">
+                        <button type="button" id="btnSaveTheme" class="ghost-btn small">Save Theme</button>
+                        <button type="button" id="btnDeleteTheme" class="ghost-btn small">Delete Theme</button>
+                      </div>
+                      <span id="theme-status" class="theme-status muted"></span>
+                    </div>
+                  </div>
+
+                  <div class="grid2">
+                    <div>
+                      <label for="ui-font-file">Custom Font (global app/fonts/)</label>
+                      <select id="ui-font-file">
+                        <option value="">— none —</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label for="ui-font-family">Font family (fallback)</label>
+                      <input id="ui-font-family" value="Arial">
+                    </div>
+                  </div>
+
+                  <div class="grid2">
+                    <div>
+                      <label for="ui-font-size">Font size</label>
+                      <input id="ui-font-size" type="number" min="8" max="160" value="20">
+                    </div>
+                    <div>
+                      <label for="ui-outline">Outline</label>
+                      <input id="ui-outline" type="number" min="0" max="10" value="2">
+                    </div>
+                  </div>
+
+                  <hr>
+
+                  <div class="grid2">
+                    <div>
+                      <label for="ui-font-color">Font color</label>
+                      <input id="ui-font-color" type="color" value="#FFFFFF">
+                    </div>
+                    <div>
+                      <label for="ui-outline-color">Outline color</label>
+                      <input id="ui-outline-color" type="color" value="#000000">
+                    </div>
+                  </div>
+
+                  <div class="grid2" style="margin-top:8px">
+                    <div>
+                      <label for="ui-endcard-color">End card color</label>
+                      <input id="ui-endcard-color" type="color" value="#FFFFFF">
+                    </div>
+                    <div>
+                      <label for="ui-endcard-border">End card border</label>
+                      <input id="ui-endcard-border" type="color" value="#000000">
+                    </div>
+                  </div>
+
+                  <label style="margin-top:8px;display:block">
+                    <input type="checkbox" id="ui-show-end-card" checked>
+                    Show end card (“Thanks for watching”)
+                  </label>
+
+                  <div class="grid2">
+                    <div>
+                      <label for="ui-end-card-text">End card text</label>
+                      <input id="ui-end-card-text" value="Thank You for Watching">
+                    </div>
+                    <div>
+                      <label for="ui-end-card-seconds">End card seconds</label>
+                      <input id="ui-end-card-seconds" type="number" min="1" max="20" step="0.5" value="5">
+                    </div>
+                  </div>
+
+                  <div id="font-preview-card" class="font-preview-card">
+                    <div class="font-preview-heading">
+                      <div>
+                        <strong>Font Preview</strong>
+                        <span class="font-preview-hint">Live sample uses the current font selection, size, color, and
+                          outline.</span>
+                      </div>
+                      <label class="font-preview-input">
+                        <span>Sample text</span>
+                        <input id="fontPreviewText" type="text" value="The quick brown fox 123" maxlength="160"
+                          placeholder="Type custom sample">
+                      </label>
+                    </div>
+                    <div id="fontPreviewSample" class="font-preview-sample" aria-live="polite">
+                      The quick brown fox 123
+                    </div>
+                    <div id="fontPreviewMeta" class="font-preview-meta muted"></div>
+                  </div>
+                  <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+                    <button id="btnAlign" {% if not (meta.audio and (meta.official_txt or meta.edited_txt) and
+                      has_lyricsync) %}disabled{% endif %}>
+                      Transcribe & Align
+                    </button>
+                    <button id="btnTxSettings" type="button" class="ghost-btn">Transcription Settings</button>
+                    <a class="btn" href="/projects/{{p.slug}}/edit" target="_blank">Open Timing Editor</a>
+                  </div>
+                </div>
+              </div>
+              <!-- Effects panel -->
+              <div id="tab-effects" class="tab-panel" data-tab-group="render-tabs">
+                <div class="grid2">
+                  <label>Effect
+                    <select id="ui-effect"></select>
+                  </label>
+                  <label>FPS
+                    <input id="ui-fps" type="number" min="1" step="1" value="30">
+                  </label>
+                  <label>Strength (0.01–0.20)
+                    <input id="ui-effect-strength" type="number" min="0" max="1" step="0.01" value="0.08">
+                  </label>
+                  <label>Cycle (seconds)
+                    <input id="ui-effect-cycle" type="number" min="1" step="0.5" value="12">
+                  </label>
+                </div>
+                <div class="grid2" id="kenburns-options" hidden>
+                  <label>Ken Burns zoom (0.01-0.6)
+                    <input id="ui-kenburns-zoom" type="number" min="0.01" max="0.6" step="0.01" value="0.12">
+                  </label>
+                  <label>Ken Burns pan amount (0-1)
+                    <input id="ui-kenburns-pan" type="number" min="0" max="1" step="0.01" value="0.35">
+                  </label>
+                </div>
+              </div>
+
+              <div id="tab-images" class="tab-panel" data-tab-group="render-tabs">
+                <h3>Image Playback</h3>
+                <div class="grid2">
+                  <label>
+                    Image duration (seconds)
+                    <input id="ui-img-duration" type="number" min="1" max="60" step="0.5" value="6">
+                  </label>
+                  <label>
+                    Fade length (seconds)
+                    <input id="ui-img-fade" type="number" min="0" max="10" step="0.1" value="1">
+                  </label>
+                </div>
+                <label>
+                  Playback mode
+                  <select id="ui-img-playback">
+                    <option value="story" selected>Story (spread evenly)</option>
+                    <option value="loop">Loop images</option>
+                  </select>
+                </label>
+                <p class="muted" style="margin-top:6px;">
+                  Story mode plays each selected image once across the video and keeps the last frame through the
+                  ending. Loop mode cycles through the images repeatedly until the song finishes.
+                </p>
+              </div>
+
+              <div class="row" style="margin-top:12px">
+                <button id="btnSaveSettings" type="button"> Save Settings</button>
+              </div>
+
+              <div id="summary" class="summary"></div>
+            </form>
+
+          </div>
+        </section>
+      </div>
+
+      <div id="workspace-images" class="main-tab-panel tab-panel" data-tab-group="workspace-tabs">
+        <section id="image-generator" class="card-section">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap">
+            <h3 style="margin:0">AI Image Generator</h3>
+            <span style="font-size:.85em;opacity:.75">Saves to projects/{{p.slug}}/images</span>
+          </div>
+
+          <div class="tabs tab-group" data-tab-group="img-tabs">
+            <button type="button" class="tab-btn active" data-tab-group="img-tabs" data-tab="tab-single-image">Single
+              Image</button>
+            <button type="button" class="tab-btn" data-tab-group="img-tabs" data-tab="tab-story-mode">Story
+              Mode</button>
+          </div>
+
+          <div id="tab-single-image" class="tab-panel active" data-tab-group="img-tabs">
+            <div class="image-llm-bar">
+              <button type="button" id="img-llm-btn">LLM Caller</button>
+              <label>
+                <span>Ollama Model</span>
+                <select id="img-llm-model">
+                  <option value="">Loading.</option>
+                </select>
+              </label>
+              <label class="llm-guard" style="flex-direction: row; align-items: center; gap: 6px;">
+                <input type="checkbox" id="img-llm-no-humans">
+                <span>No humans (photorealistic)</span>
+              </label>
+              <span id="img-llm-status" class="img-status muted"></span>
+            </div>
+            <p style="margin:6px 0 12px;font-size:.9em;opacity:.85">
+              Craft a Stable Diffusion prompt, pick a registered model, and LyricSync will save the results into this
+              project.
+            </p>
+            <div class="image-pipeline-controls">
+              <button type="button" id="img-pipeline-btn" class="ghost-btn">Preload pipeline</button>
+              <span id="img-pipeline-status" class="img-status muted"></span>
+            </div>
+            <form id="img-form" class="image-form">
+              <label>
+                Prompt
+                <textarea id="img-prompt" rows="3" placeholder="e.g. cinematic photo of a neon-lit stage"
+                  required></textarea>
+              </label>
+              <label>
+                Style
+                <select id="img-style">
+                  <option value="photorealistic" selected>Photorealistic</option>
+                  <option value="stylized">Stylized</option>
+                  <option value="anime">Anime</option>
+                  <option value="animated">Animated</option>
+                  <option value="landscape">Landscape</option>
+                </select>
+                <!-- Sub-menus for specific styles -->
+                <div id="style-submenus" style="margin-top:8px;">
+                  <div id="submenu-stylized" hidden class="submenu-box">
+                    <label style="font-size:0.9em; display:block; margin-bottom:4px; color:#ccc;">Stylization
+                      Detail</label>
+                    <select id="img-sub-stylized"
+                      style="width:100%; font-size:0.9em; padding:4px; background:rgba(0,0,0,0.2); border:1px solid #444; color:#fff; border-radius:4px;">
+                      <option value="generic">Generic Stylized</option>
+                      <option value="pixel_art">Pixel Art</option>
+                      <option value="3d_render">3D Render</option>
+                      <option value="surrealist">Surrealist</option>
+                    </select>
+                  </div>
+                  <div id="submenu-anime" hidden class="submenu-box">
+                    <small class="muted">Anime options (coming soon)</small>
+                  </div>
+                  <div id="submenu-animated" hidden class="submenu-box">
+                    <small class="muted">Animated options (coming soon)</small>
+                  </div>
+                </div>
+              </label>
+              <label>
+                Negative prompt
+                <textarea id="img-negative" rows="2" placeholder="(optional) things to avoid"></textarea>
+              </label>
+              <div class="lora-panel">
+                <div class="lora-panel-header">
+                  <strong>LoRA adapters</strong>
+                  <span id="lora-status" class="img-status muted"></span>
+                </div>
+                <div id="lora-list" class="lora-list muted">Loading LoRAs...</div>
+              </div>
+              <div class="image-grid">
+                <label>
+                  Model
+                  <select id="img-model" required>
+                    <option value="">Loading models.</option>
+                  </select>
+                  <div class="model-path-actions">
+                    <button type="button" id="img-model-dir-btn" class="ghost-btn small">Set model folder</button>
+                    <button type="button" id="img-lora-dir-btn" class="ghost-btn small">Set LoRA folder</button>
+                  </div>
+                </label>
+                <label>
+                  Images
+                  <input id="img-count" type="number" min="1" max="4" value="1">
+                </label>
+              </div>
+              <div class="image-grid">
+                <label>
+                  Seed
+                  <input id="img-seed" type="number" placeholder="random">
+                </label>
+                <label>
+                  Width
+                  <input id="img-width" type="number" min="512" max="2048" step="32" value="1280">
+                </label>
+                <label>
+                  Height
+                  <input id="img-height" type="number" min="288" max="1536" step="32" value="736">
+                </label>
+                <label>
+                  Steps
+                  <input id="img-steps" type="number" min="10" max="80" step="1" value="15">
+                </label>
+              </div>
+              <button id="img-generate-btn" type="submit">Generate Images</button>
+              <div id="img-status" class="img-status muted"></div>
+            </form>
+          </div>
+
+          <div id="tab-story-mode" class="tab-panel" data-tab-group="img-tabs">
+            <p>Have the LLM suggest images for each verse so the visuals follow the story of the song. Press the button
+              to fetch prompts, then optionally generate all images.</p>
+            <button type="button" id="btnSuggestStory">Suggest Story Images</button>
+            <div id="story-prompts-panel" class="story-prompts-panel" hidden>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0;">
+                <h4 style="margin:0">Story prompts</h4>
+                <span class="muted" id="story-prompts-count">0 prompts</span>
+              </div>
+              <p class="muted" id="story-prompts-hint">Each line comes from the LLM; you can review them before
+                generating.</p>
+              <div id="story-prompts-list-wrapper" class="story-prompts-list-wrapper">
+                <ol id="story-prompts-list"></ol>
+              </div>
+              <div class="story-actions">
+                <button type="button" id="story-run-images" class="ghost-btn">Generate All Story Images</button>
+                <button type="button" id="story-assign-images" class="ghost-btn small">Apply selected images
+                  order</button>
+                <span id="story-prompts-status" class="img-status muted"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="batch-upload">
+            <h4 style="margin:0">Upload your own images</h4>
+            <input id="img-batch-files" type="file" accept="image/*" multiple>
+            <button type="button" id="img-batch-upload">Upload</button>
+            <span id="img-batch-status" class="img-status muted"></span>
+          </div>
+
+          <div id="img-gallery" class="image-gallery"></div>
+          <div id="img-selection-actions" class="selection-actions">
+            <button type="button" id="img-selection-save">Save selected images for render</button>
+            <button type="button" id="img-reorder-btn" class="ghost-btn small">Reorder selected</button>
+            <button type="button" id="img-delete-all" class="ghost-btn danger">Delete All Images</button>
+            <span id="img-selection-status" class="img-status muted"></span>
+          </div>
+        </section>
+      </div>
+
+      <div id="workspace-review" class="main-tab-panel tab-panel" data-tab-group="workspace-tabs">
+        <section id="review-panel" class="card-section">
+          <h3>Review & Render</h3>
+
+          <div class="review-grid">
+            <!-- Col 1: Lyrics & Text -->
+            <div class="review-col">
+              <h4>Lyrics & Style</h4>
+              <div class="review-stat">
+                <span class="muted">Style:</span>
+                <strong id="rev-style">-</strong>
+              </div>
+              <div class="review-stat">
+                <span class="muted">Theme:</span>
+                <strong id="rev-theme">-</strong>
+              </div>
+              <div class="review-stat">
+                <span class="muted">Font:</span>
+                <strong id="rev-font">-</strong>
+              </div>
+              <div class="review-stat">
+                <span class="muted">Size:</span>
+                <span id="rev-size">-</span>
+              </div>
+              <div style="margin-top:8px;">
+                <a href="#" onclick="document.querySelector('[data-tab=\'workspace-settings\']').click();return false;"
+                  class="ghost-btn small">Edit Settings</a>
+              </div>
+            </div>
+
+            <!-- Col 2: Images -->
+            <div class="review-col">
+              <h4>Images</h4>
+              <div class="review-stat">
+                <span class="muted">Playback:</span>
+                <strong id="rev-playback">-</strong>
+              </div>
+              <div class="review-stat">
+                <span class="muted">Count:</span>
+                <strong id="rev-img-count">0</strong>
+              </div>
+              <div id="rev-img-grid" class="image-gallery small" style="margin-top:6px;max-height:120px;overflow:auto;">
+              </div>
+              <div style="margin-top:8px;">
+                <a href="#" onclick="document.querySelector('[data-tab=\'workspace-images\']').click();return false;"
+                  class="ghost-btn small">Manage Images</a>
+              </div>
+            </div>
+
+            <!-- Col 3: Metadata -->
+            <div class="review-col">
+              <h4>Audio Metadata</h4>
+              <div class="review-stat">
+                <span class="muted">Title:</span>
+                <strong id="rev-meta-title">...</strong>
+              </div>
+              <div class="review-stat">
+                <span class="muted">Duration:</span>
+                <span id="rev-meta-dur">...</span>
+              </div>
+
+              <div style="margin-top:12px;">
+                <button id="btnRender" class="btn-primary" type="button" style="width:100%">Render Video</button>
+              </div>
+              <div id="render-status" style="font-size:0.85em;margin-top:4px;min-height:1.2em;"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="cover-upload" class="card-section">
+          <div id="cover-generated-container" class="cover-generated" {% if meta.cover %}hidden{% else %}hidden{% endif
+            %}>
+            <h4 style="margin:12px 0 6px;">Pick From Generated Images</h4>
+            <p style="margin:0 0 10px;font-size:.85em;opacity:.8;">Use one of the AI-generated images saved in this
+              project.
+            </p>
+            <div id="cover-generated" class="image-gallery small"></div>
+            <div id="cover-selection-actions" class="selection-actions" hidden>
+              <button type="button" id="cover-selection-save">Use selected for render</button>
+              <span id="cover-selection-status" class="img-status muted"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card-section logs-panel collapsed" id="logsPanel">
+          <div class="logs-header">
+            <h3>Logs</h3>
+            <label class="switch">
+              <input type="checkbox" id="toggleLogs" />
+              <span class="slider"></span>
+              <span class="switch-label">Show logs</span>
+            </label>
+          </div>
+          <div class="logs">
+            <div>
+              <div class="loghead">align.log</div>
+              <pre id="logAlign"></pre>
+            </div>
+            <div>
+              <div class="loghead">render.log</div>
+              <pre id="logRender"></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="txDrawerBackdrop" class="tx-drawer__backdrop"></div>
+  <aside id="txDrawer" class="tx-drawer" aria-hidden="true">
+    <header class="tx-drawer__header">
+      <div>
+        <div class="tx-eyebrow">WhisperX</div>
+        <h4>Transcription Settings</h4>
+      </div>
+      <button id="btnTxClose" type="button" class="ghost-btn small"
+        aria-label="Close transcription settings">&times;</button>
+    </header>
+    <div class="tx-drawer__body">
+      <label>
+        Model preset
+        <select id="ui-tx-model">
+          <option value="large-v2" selected>large-v2 (best)</option>
+          <option value="large-v3">large-v3</option>
+          <option value="medium">medium</option>
+          <option value="small">small</option>
+          <option value="base">base</option>
+          <option value="tiny">tiny</option>
+        </select>
+      </label>
+      <label>
+        Language code
+        <input id="ui-tx-language" value="auto" placeholder="auto">
+      </label>
+      <label>
+        Device
+        <select id="ui-tx-device">
+          <option value="auto" selected>auto</option>
+          <option value="cuda">CUDA (GPU)</option>
+          <option value="cpu">CPU</option>
+        </select>
+      </label>
+      <label>
+        Compute type
+        <select id="ui-tx-compute">
+          <option value="float16" selected>float16</option>
+          <option value="int8">int8</option>
+          <option value="int8_float16">int8_float16</option>
+          <option value="int8_float32">int8_float32</option>
+        </select>
+      </label>
+      <label class="tx-coming">
+        <input type="checkbox" id="ui-tx-highlight">
+        Enable per-word highlight (coming soon)
+      </label>
+      <p class="tx-note">
+        Settings are applied before each WhisperX run. Highlighting is scaffolded for a future release.
+      </p>
+    </div>
+  </aside>
+  <style>
+    .project-panel {
+      padding: 16px 18px;
+    }
+
+    .project-panel h2 {
+      margin: 0 0 16px;
+      font-size: 1.5rem;
+    }
+
+    .project-workspace {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .artifacts-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 240px;
+      max-width: 300px;
+      position: sticky;
+      top: 12px;
+    }
+
+    .workspace-main {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .main-tabs {
+      position: sticky;
+      top: 12px;
+      z-index: 5;
+      background: rgba(8, 10, 18, 0.9);
+      border: 1px solid #1f1f1f;
+      border-radius: 12px;
+      padding: 6px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+    }
+
+    .main-tabs .tab-btn {
+      flex: 1 1 0;
+      text-align: center;
+      margin: 0;
+      border-color: #27314a;
+      background: #0b0f1e;
+      color: #d8e2ff;
+    }
+
+    .main-tabs .tab-btn.active {
+      background: #1a2135;
+      border-color: #4b74ff;
+      color: #f4f7ff;
+      box-shadow: 0 0 0 1px rgba(75, 116, 255, 0.4);
+    }
+
+    .main-tab-panel {
+      display: none;
+    }
+
+    .main-tab-panel.active {
+      display: block;
+    }
+
+    .project-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 12px;
+      margin: 12px 0;
+    }
+
+    .project-cta-row__primary {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1 1 240px;
+      min-width: 220px;
+    }
+
+    .project-cta-row__primary span {
+      display: block;
+      line-height: 1.3;
+    }
+
+    .cover-upload-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .cover-upload-label {
+      font-size: .9em;
+    }
+
+    .cover-upload-input {
+      flex: 1 1 260px;
+      min-width: 220px;
+    }
+
+    .cover-upload-status {
+      font-size: .85em;
+      min-height: 1.5em;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    #preview-wrap video {
+      width: 100%;
+      border-radius: 10px;
+      background: #000;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0;
+      align-items: center;
+    }
+
+    .selection-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-btn {
+      padding: 6px 12px;
+      border: 1px solid #333;
+      background: #111;
+      color: #eee;
+      border-radius: 8px;
+      margin-right: 8px;
+    }
+
+    .tab-btn.active {
+      background: #222;
+    }
+
+    .tab-badge {
+      color: #9cf;
+      font-size: .9em;
+      margin-left: 6px;
+    }
+
+    .summary {
+      margin-top: 6px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      font-size: .85em;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #333;
+      background: #161616;
+    }
+
+    .font-preview-card {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      background: #0a0a0a;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .font-preview-heading {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .font-preview-heading strong {
+      font-size: 1em;
+    }
+
+    .font-preview-hint {
+      display: block;
+      font-size: .8em;
+      opacity: .7;
+      margin-top: 2px;
+    }
+
+    .font-preview-input {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: .85em;
+      min-width: 200px;
+      flex: 1 1 220px;
+    }
+
+    .font-preview-input input {
+      background: #050505;
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 6px 8px;
+      color: #fff;
+    }
+
+    .font-preview-sample {
+      min-height: 84px;
+      border: 1px dashed #333;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      background: #050505;
+      transition: opacity .2s ease;
+    }
+
+    .font-preview-card.font-preview-loading .font-preview-sample {
+      opacity: .6;
+    }
+
+    .font-preview-card.font-preview-error .font-preview-sample {
+      border-color: #8a3f3f;
+    }
+
+    .font-preview-meta {
+      font-size: .85em;
+      min-height: 1.2em;
+      color: #b0b9d8;
+    }
+
+    .theme-column {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .theme-controls {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .theme-status {
+      min-height: 1.2em;
+      font-size: .8em;
+      display: block;
+    }
+
+    .payload-pre {
+      background: #0e0e0e;
+      border: 1px solid #2a2a2a;
+      padding: 8px;
+      border-radius: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .ghost-btn {
+      background: #161616;
+      border: 1px solid #4a4a4a;
+      color: #f0f0f0;
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+
+    .ghost-btn:hover,
+    .ghost-btn:focus-visible {
+      background: #242424;
+      border-color: #6fa8ff;
+      color: #fff;
+    }
+
+    .ghost-btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .ghost-btn.small {
+      padding: 4px 8px;
+      font-size: 1.2em;
+      line-height: 1;
+    }
+
+    .ghost-btn.danger {
+      border-color: #b44;
+      color: #ffb3b3;
+    }
+
+    .ghost-btn.danger:hover,
+    .ghost-btn.danger:focus-visible {
+      background: #3a1111;
+      border-color: #ff6b6b;
+      color: #fff;
+    }
+
+    .tx-drawer__backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      z-index: 90;
+    }
+
+    .tx-drawer__backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .tx-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: 320px;
+      max-width: 90vw;
+      height: 100vh;
+      background: #0c0c0c;
+      border-left: 1px solid #1f1f1f;
+      padding: 18px;
+      box-shadow: -8px 0 16px rgba(0, 0, 0, 0.4);
+      transform: translateX(100%);
+      transition: transform .28s ease;
+      z-index: 99;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .tx-drawer.open {
+      transform: translateX(0);
+    }
+
+    .tx-drawer__header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .tx-drawer__header h4 {
+      margin: 0;
+    }
+
+    .tx-eyebrow {
+      font-size: .8em;
+      text-transform: uppercase;
+      color: #7eaefd;
+      letter-spacing: .08em;
+    }
+
+    .tx-drawer__body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .tx-drawer__body label {
+      display: flex;
+      flex-direction: column;
+      font-size: .9em;
+      gap: 4px;
+    }
+
+    .tx-drawer__body input,
+    .tx-drawer__body select {
+      background: #050505;
+      border: 1px solid #333;
+      color: #fff;
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+
+    .tx-coming {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tx-coming input {
+      width: auto;
+    }
+
+    .tx-note {
+      font-size: .8em;
+      opacity: .7;
+      margin: 0;
+    }
+
+    #image-generator .image-form {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #image-generator label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: .9em;
+    }
+
+    #image-generator textarea,
+    #image-generator input,
+    #image-generator select {
+      background: #050505;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 6px 8px;
+      color: #fff;
+    }
+
+    #image-generator button {
+      align-self: flex-start;
+    }
+
+    #img-status {
+      min-height: 1.4em;
+      font-size: .85em;
+    }
+
+    .image-llm-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+      margin: 8px 0;
+    }
+
+    .image-llm-bar>label {
+      display: flex;
+      flex-direction: column;
+      font-size: .85em;
+      gap: 4px;
+      color: #cfd7f1;
+    }
+
+    .image-llm-bar .llm-guard {
+      flex-direction: row;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .image-llm-bar .llm-guard input {
+      width: auto;
+    }
+
+    .image-pipeline-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .image-pipeline-controls button {
+      font-size: .85em;
+      padding: 6px 12px;
+    }
+
+    .image-llm-bar select {
+      min-width: 180px;
+    }
+
+    #img-llm-status {
+      min-height: 1.4em;
+      font-size: .85em;
+    }
+
+    #cover-generated-container {
+      margin-top: 12px;
+    }
+
+    #cover-generated-container .image-thumb {
+      padding: 6px;
+    }
+
+    #cover-generated-container .image-thumb button {
+      width: 100%;
+      margin-top: 4px;
+    }
+
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .model-path-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .image-gallery {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+
+    .image-gallery:empty {
+      display: none;
+    }
+
+    .image-thumb {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid #262626;
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .image-thumb img {
+      width: 100%;
+      border-radius: 8px;
+      aspect-ratio: 1/1;
+      object-fit: cover;
+      background: #050505;
+    }
+
+    .image-thumb .image-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .image-thumb .select-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: .8em;
+    }
+
+    .image-thumb a {
+      border: 1px solid #334059;
+      border-radius: 6px;
+      padding: 4px 8px;
+      text-align: center;
+      text-decoration: none;
+      font-size: .82em;
+      color: #cfe4ff;
+      flex: 1;
+    }
+
+    .image-thumb button.image-delete {
+      background: #3a1a1a;
+      border: 1px solid #822;
+      color: #ffb3b3;
+      border-radius: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .image-thumb button.image-delete:hover {
+      background: #5a1a1a;
+    }
+
+    .batch-upload {
+      margin: 12px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .batch-upload input[type="file"] {
+      flex: 1 1 260px;
+      min-width: 220px;
+    }
+
+    .batch-upload .img-status {
+      flex: 1 1 200px;
+    }
+
+    #story-prompts-panel {
+      border: 1px solid #292929;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 12px;
+      background: #050505;
+    }
+
+    #story-prompts-list-wrapper {
+      border: 1px solid #1c1c1c;
+      border-radius: 8px;
+      max-height: 220px;
+      overflow: auto;
+      background: #020202;
+      padding: 8px;
+    }
+
+    #story-prompts-list {
+      list-style: decimal inside;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #story-prompts-list li {
+      font-size: .9em;
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    #story-prompts-list li:last-child {
+      border-bottom: none;
+    }
+
+    #reorderModal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.82);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 998;
+      padding: 20px;
+    }
+
+    #reorderModal[hidden] {
+      display: none !important;
+    }
+
+    .reorder-list {
+      list-style: none;
+      margin: 10px 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 300px;
+      overflow: auto;
+    }
+
+    .reorder-item {
+      padding: 8px 10px;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      background: #0f0f0f;
+      cursor: grab;
+    }
+
+    .reorder-item.dragging {
+      opacity: 0.6;
+    }
+
+    .story-prompt-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .story-time {
+      font-size: .78em;
+      opacity: .7;
+      min-width: 120px;
+      text-align: right;
+    }
+
+    .story-status {
+      font-size: .75em;
+      border: 1px solid #333;
+      border-radius: 999px;
+      padding: 2px 10px;
+      white-space: nowrap;
+    }
+
+    .story-status-pending {
+      color: #9cd7ff;
+      border-color: #9cd7ff;
+    }
+
+    .story-status-running {
+      color: #ffd47c;
+      border-color: #ffd47c;
+    }
+
+    .story-status-done {
+      color: #9af0a0;
+      border-color: #9af0a0;
+    }
+
+    .story-status-failed {
+      color: #ff9b9b;
+      border-color: #ff9b9b;
+    }
+
+    .story-image-badge {
+      font-size: .72em;
+      border: 1px solid #2f6f3a;
+      border-radius: 999px;
+      padding: 2px 8px;
+      color: #9af0a0;
+      margin-left: 8px;
+      white-space: nowrap;
+    }
+
+    .story-inline-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .story-image-select {
+      min-width: 200px;
+      max-width: 360px;
+      background: #050505;
+      border: 1px solid #2a2a2a;
+      color: #fff;
+      border-radius: 8px;
+      padding: 4px 8px;
+    }
+
+    .lora-panel {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 10px;
+      background: #050505;
+    }
+
+    .lora-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .lora-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: .88em;
+      color: #d0d0d0;
+    }
+
+    .lora-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      background: #0f0f0f;
+      justify-content: flex-start;
+    }
+
+    .lora-row span {
+      flex: 1;
+      text-align: left;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .lora-weight {
+      width: 80px;
+      background: #050505;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 4px 6px;
+      color: #fff;
+    }
+
+    .story-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    #imageLightbox {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.82);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      padding: 20px;
+    }
+
+    #imageLightbox[hidden] {
+      display: none !important;
+    }
+
+    #imageLightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    #imageLightbox {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.82);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      padding: 20px;
+    }
+
+    #imageLightbox img {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .card-section {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 12px;
+      padding: 12px;
+      border: 1px solid #1f1f1f;
+    }
+
+    .logs-panel.collapsed .logs {
+      display: none;
+    }
+
+    .logs-panel .logs-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logs-panel.collapsed {
+      opacity: .8;
+    }
+
+    .switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+    }
+
+    .switch input {
+      display: none;
+    }
+
+    .switch .slider {
+      width: 44px;
+      height: 24px;
+      border-radius: 999px;
+      background: #2b2b2b;
+      position: relative;
+      transition: background .2s ease;
+    }
+
+    .switch .slider::after {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fafafa;
+      top: 3px;
+      left: 3px;
+      transition: transform .2s ease;
+    }
+
+    .switch input:checked+.slider {
+      background: #387dff;
+    }
+
+    .switch input:checked+.slider::after {
+      transform: translateX(20px);
+    }
+
+    .switch-label {
+      font-size: .9em;
+      color: #b5bdd2;
+    }
+
+    @media (max-width: 1100px) {
+      .project-workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .artifacts-sidebar {
+        position: static;
+        max-width: none;
+      }
+
+      .main-tabs {
+        position: static;
+      }
+    }
+
+    @media (max-width: 1024px) {
+      .grid2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+
+      .project-cta-row,
+      .project-cta-row__primary,
+      .cover-upload-row,
+      .selection-actions,
+      .image-llm-bar,
+      .image-pipeline-controls,
+      .story-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .cover-upload-input {
+        min-width: 0;
+        width: 100%;
+      }
+
+      .project-cta-row__primary {
+        gap: 6px;
+      }
+
+      .model-path-actions {
+        width: 100%;
+      }
+
+      .logs {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      main {
+        padding: 10px;
+      }
+
+      .panel {
+        padding: 12px;
+      }
+
+      .project-workspace {
+        gap: 16px;
+      }
+
+      .row {
+        flex-wrap: wrap;
+      }
+
+      #preview-section {
+        margin-bottom: 16px;
+      }
+
+      #render-form .grid2 {
+        grid-template-columns: 1fr;
+      }
+
+      .tabs {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .tab-btn {
+        flex: 1 1 auto;
+        text-align: center;
+      }
+
+      .logs-panel pre {
+        min-height: 160px;
+      }
+    }
+
+    /* Review Grid CSS */
+    .review-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-top: 10px;
+    }
+
+    .review-col {
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .review-col h4 {
+      margin: 0 0 10px;
+      opacity: 0.9;
+      border-bottom: 1px solid #333;
+      padding-bottom: 6px;
+    }
+
+    .review-stat {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9em;
+      margin-bottom: 4px;
+    }
+
+    @media (max-width: 900px) {
+      .review-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</section>
+
+{% include "_paste_modal.html" %}
+
+<script>
+  function setPreview(url) {
+    const v = document.getElementById('ui-video');
+    if (!v || !url) return;
+
+    const cache = url + (url.includes('?') ? '&' : '?') + 'ts=' + Date.now();
+
+    try { v.pause(); } catch { }
+    v.src = cache;
+    try { v.load(); } catch { }
+
+    const dl = document.getElementById('ui-video-download');
+    if (dl) dl.href = cache;
+    const opener = document.getElementById('ui-video-open');
+    if (opener) opener.href = cache;
+
+    const s = document.getElementById('ui-video-status');
+    if (s) s.textContent = `Preview refreshed ${new Date().toLocaleTimeString()} (click play to preview)`;
+  }
+</script>
+
+<script>
+  const $ = s => document.querySelector(s);
+  const slug = window.currentProjectSlug || "{{p.slug}}"; // keep your slug source
+  window.slug = slug;
+  const projectHasCover = JSON.parse('{{ meta.cover | tojson | safe }}');
+  window.projectHasCover = projectHasCover;
+  window.storySlots = [];
+</script>
+
+<div id="imageLightbox" class="img-lightbox" hidden>
+  <img alt="Fullscreen preview">
+  <button type="button" id="lightboxClose" class="ghost-btn small"
+    style="position:absolute;top:20px;right:20px;">&times;</button>
+</div>
+
+<div id="reorderModal" class="img-lightbox" hidden>
+  <div class="card-section" style="max-width:540px;width:100%;background:#0b0b0b;border-radius:12px;">
+    <h3>Reorder Selected Images</h3>
+    <p class="muted" style="font-size:.9em;">Drag to change order. Top = first in render.</p>
+    <ul id="reorderList" class="reorder-list"></ul>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;">
+      <span id="reorderStatus" class="img-status muted" style="flex:1 1 auto;"></span>
+      <button type="button" id="reorderSave" class="btn">Save order</button>
+      <button type="button" id="reorderCancel" class="ghost-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="modelDirModal" class="img-lightbox" hidden>
+  <div class="card-section" style="max-width:480px;width:100%;background:#0b0b0b;border-radius:12px;">
+    <h3>Set Model Directory</h3>
+    <p class="muted" style="font-size:.9em;">Enter the folder path that contains your diffusion checkpoints. All
+      .safetensors files inside will be listed in the model picker.</p>
+    <label>
+      <span>Directory path</span>
+      <input id="model-dir-input" type="text" placeholder="C:/Models/SDXL">
+    </label>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button type="button" id="model-dir-save">Save</button>
+      <button type="button" id="model-dir-cancel" class="ghost-btn">Cancel</button>
+    </div>
+    <span id="model-dir-status" class="img-status muted" style="display:block;margin-top:8px;"></span>
+  </div>
+</div>
+
+<script>
+  // Defaults used to show "changed" chips/badges
+  const defaults = {
+    effect: "none", effect_strength: 0.08, effect_cycle: 12, fps: 30,
+    effect_zoom: 0.12, effect_pan: 0.35,
+    style: "burn-srt", text_theme: "default", font: "Arial", font_size: 20, outline: 2,
+    show_title: true, use_mp3_title: true, show_end_card: true
+  };
+
+  function getInput(id) {
+    return document.getElementById(id);
+  }
+
+  function isFiniteNumber(val) {
+    return typeof val === "number" && isFinite(val);
+  }
+
+  function readValue(id, fallback) {
+    const el = getInput(id);
+    if (!el || typeof el.value === "undefined" || el.value === null) return fallback;
+    return el.value;
+  }
+
+  function readInt(id, fallback) {
+    const parsed = parseInt(readValue(id, ''), 10);
+    return isFiniteNumber(parsed) ? parsed : fallback;
+  }
+
+  function readFloat(id, fallback) {
+    const parsed = parseFloat(readValue(id, ''));
+    return isFiniteNumber(parsed) ? parsed : fallback;
+  }
+
+  function readCheckbox(id, fallback) {
+    const el = getInput(id);
+    if (!el || typeof el.checked === "undefined") return fallback;
+    return !!el.checked;
+  }
+
+  (function setupFontPreview() {
+    const sampleEl = document.getElementById('fontPreviewSample');
+    if (!sampleEl) {
+      window.updateFontPreview = () => { };
+      return;
+    }
+    const inputEl = document.getElementById('fontPreviewText');
+    const metaEl = document.getElementById('fontPreviewMeta');
+    const cardEl = document.getElementById('font-preview-card');
+    const DEFAULT_TEXT = "The quick brown fox 123";
+    const cache = new Map();
+    let loadToken = 0;
+
+    function cleanFamilyList(raw) {
+      const parts = String(raw || '').split(',').map(part => part.trim().replace(/["']/g, '')).filter(Boolean);
+      if (!parts.length) return '"Arial"';
+      return parts.map(name => `"${name}"`).join(', ');
+    }
+
+    function getFallbackFamilies() {
+      return cleanFamilyList(readValue('ui-font-family', defaults.font));
+    }
+
+    function getFontFileName() {
+      const sel = document.getElementById('ui-font-file');
+      const val = sel && typeof sel.value === 'string' ? sel.value.trim() : '';
+      return val;
+    }
+
+    function buildOutlineShadow(outline, color) {
+      const width = Math.max(0, Number(outline) || 0);
+      if (!width) return 'none';
+      const step = Math.max(1, Math.round(width));
+      const offsets = [];
+      const positions = [-step, 0, step];
+      for (const x of positions) {
+        for (const y of positions) {
+          if (x === 0 && y === 0) continue;
+          offsets.push(`${x}px ${y}px 0 ${color}`);
+        }
+      }
+      return offsets.join(', ');
+    }
+
+    function loadFontFace(fontName) {
+      if (!fontName || !('FontFace' in window)) return Promise.resolve(null);
+      if (cache.has(fontName)) return cache.get(fontName);
+      const safeName = fontName.replace(/[^A-Za-z0-9_-]+/g, '-').slice(0, 64) || 'font';
+      const promise = fetch(`/api/fonts/download/${encodeURIComponent(fontName)}`)
+        .then(res => {
+          if (!res.ok) throw new Error(`Font ${fontName} unavailable`);
+          return res.arrayBuffer();
+        })
+        .then(buf => {
+          const family = `ls-preview-${safeName}`;
+          const face = new FontFace(family, buf);
+          return face.load().then(loaded => {
+            if (document.fonts && typeof document.fonts.add === "function") {
+              document.fonts.add(loaded);
+            }
+            return family;
+          });
+        })
+        .catch(err => {
+          cache.delete(fontName);
+          console.warn('Font preview load failed:', err);
+          throw err;
+        });
+      cache.set(fontName, promise);
+      return promise;
+    }
+
+    function updateFontPreview() {
+      const fallbackFamilies = getFallbackFamilies();
+      const fontFile = getFontFileName();
+      const fontSize = Math.max(6, readInt('ui-font-size', defaults.font_size));
+      const outline = Math.max(0, readInt('ui-outline', defaults.outline));
+      const fontColor = readValue('ui-font-color', '#FFFFFF') || '#FFFFFF';
+      const outlineColor = readValue('ui-outline-color', '#000000') || '#000000';
+      const text = (inputEl && inputEl.value ? inputEl.value.trim() : '') || DEFAULT_TEXT;
+
+      sampleEl.textContent = text;
+      sampleEl.style.fontSize = `${fontSize}px`;
+      sampleEl.style.color = fontColor;
+      sampleEl.style.fontFamily = fallbackFamilies;
+      sampleEl.style.textShadow = buildOutlineShadow(outline, outlineColor);
+
+      const infoBits = [];
+      if (fontFile) infoBits.push(`File: ${fontFile}`);
+      if (fallbackFamilies) infoBits.push(`Family: ${fallbackFamilies.replace(/"/g, '')}`);
+      infoBits.push(`Size: ${fontSize}px`, `Outline: ${outline}`);
+      if (metaEl) {
+        metaEl.textContent = infoBits.join(' • ');
+      }
+
+      if (cardEl) {
+        cardEl.classList.remove('font-preview-loading', 'font-preview-error');
+        if (fontFile && !('FontFace' in window)) {
+          cardEl.classList.add('font-preview-error');
+        }
+      }
+
+      const token = ++loadToken;
+      if (fontFile && 'FontFace' in window) {
+        cardEl && cardEl.classList.add('font-preview-loading');
+        loadFontFace(fontFile).then(family => {
+          if (token !== loadToken) return;
+          if (family) {
+            const families = [`"${family}"`, fallbackFamilies].filter(Boolean).join(', ');
+            sampleEl.style.fontFamily = families;
+          }
+          cardEl && cardEl.classList.remove('font-preview-loading', 'font-preview-error');
+        }).catch(() => {
+          if (token !== loadToken) return;
+          cardEl && cardEl.classList.remove('font-preview-loading');
+          cardEl && cardEl.classList.add('font-preview-error');
+        });
+      }
+    }
+
+    if (inputEl) {
+      inputEl.addEventListener('input', updateFontPreview);
+    }
+
+    window.updateFontPreview = updateFontPreview;
+    updateFontPreview();
+  })();
+
+  // Tabs (scoped by data-tab-group)
+  (function initTabs() {
+    const groups = new Map();
+    document.querySelectorAll('[data-tab-group]').forEach(el => {
+      const group = el.dataset.tabGroup || 'default';
+      const bucket = groups.get(group) || { buttons: [], panels: [] };
+      if (el.classList.contains('tab-btn')) bucket.buttons.push(el);
+      if (el.classList.contains('tab-panel') || el.classList.contains('main-tab-panel')) bucket.panels.push(el);
+      groups.set(group, bucket);
+    });
+
+    groups.forEach(({ buttons, panels }) => {
+      buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.dataset.tab;
+          buttons.forEach(b => b.classList.toggle('active', b === btn));
+          panels.forEach(panel => panel.classList.toggle('active', panel.id === targetId));
+        });
+      });
+    });
+  })();
+
+  // Load effects list
+  async function loadEffects() {
+    try {
+      const r = await fetch('/api/effects');
+      const { effects } = await r.json();
+      const sel = $('#ui-effect');
+      sel.innerHTML = '';
+      const fallbackEffects = ['none', 'zoom', 'kenburns'];
+      const list = Array.isArray(effects) && effects.length ? effects : fallbackEffects;
+      list.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      const toggleKenBurns = () => {
+        const wrap = document.getElementById('kenburns-options');
+        if (!wrap) return;
+        if (sel.value === 'kenburns') {
+          wrap.removeAttribute('hidden');
+        } else {
+          wrap.setAttribute('hidden', 'hidden');
+        }
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem(`proj:${slug}:settings`) || '{}');
+        const desired = saved['ui-effect'];
+        if (desired && Array.from(sel.options).some(opt => opt.value === desired)) {
+          sel.value = desired;
+        }
+      } catch { }
+      if (!sel.value && sel.options.length) sel.selectedIndex = 0;
+      toggleKenBurns();
+      sel.addEventListener('change', toggleKenBurns);
+    } catch {
+      const sel = $('#ui-effect');
+      if (sel) {
+        sel.innerHTML = '<option value="none">none</option><option value="zoom">zoom</option>';
+        try {
+          const saved = JSON.parse(localStorage.getItem(`proj:${slug}:settings`) || '{}');
+          const desired = saved['ui-effect'];
+          if (desired && Array.from(sel.options).some(opt => opt.value === desired)) {
+            sel.value = desired;
+          }
+        } catch { }
+      }
+    }
+  }
+  loadEffects();
+
+  function getPayload() {
+    // Lyrics tab values (adjust ids to your actual ones)
+    const payload = {
+      style: readValue('ui-style', defaults.style),
+      text_theme: readValue('ui-theme', defaults.text_theme),
+      font: readValue('ui-font-family', defaults.font),
+      font_size: readInt('ui-font-size', defaults.font_size),
+      outline: readInt('ui-outline', defaults.outline),
+      font_color: readValue('ui-font-color', '#FFFFFF'),
+      outline_color: readValue('ui-outline-color', '#000000'),
+      thanks_color: readValue('ui-endcard-color', '#FFFFFF'),
+      thanks_border_color: readValue('ui-endcard-border', '#000000'),
+      show_end_card: readCheckbox('ui-show-end-card', defaults.show_end_card),
+      end_card_text: readValue('ui-end-card-text', 'Thank You for Watching'),
+      end_card_seconds: readFloat('ui-end-card-seconds', 5),
+      show_title: readCheckbox('ui-show-title', defaults.show_title),
+      use_mp3_title: readCheckbox('ui-use-mp3-title', defaults.use_mp3_title),
+
+      // Effects tab values
+      effect: readValue('ui-effect', defaults.effect),
+      effect_strength: readFloat('ui-effect-strength', defaults.effect_strength),
+      effect_cycle: readFloat('ui-effect-cycle', defaults.effect_cycle),
+      effect_zoom: readFloat('ui-kenburns-zoom', defaults.effect_zoom),
+      effect_pan: readFloat('ui-kenburns-pan', defaults.effect_pan),
+      fps: readInt('ui-fps', defaults.fps),
+    };
+    return payload;
+  }
+
+  function updateSummaryAndBadges(payload) {
+    const chips = [];
+    if (payload.effect !== defaults.effect) chips.push(`effect: ${payload.effect}`);
+    if (payload.effect !== 'none') {
+      if (payload.effect_strength !== defaults.effect_strength) chips.push(`strength: ${payload.effect_strength}`);
+      if (payload.effect_cycle !== defaults.effect_cycle) chips.push(`cycle: ${payload.effect_cycle}s`);
+      if (payload.effect === 'kenburns') {
+        if (payload.effect_zoom !== defaults.effect_zoom) chips.push(`zoom: ${payload.effect_zoom}`);
+        if (payload.effect_pan !== defaults.effect_pan) chips.push(`pan: ${payload.effect_pan}`);
+      }
+      if (payload.fps !== defaults.fps) chips.push(`fps: ${payload.fps}`);
+      $('#tab-badge-effects').hidden = false;
+    } else {
+      $('#tab-badge-effects').hidden = true;
+    }
+    if (payload.style !== defaults.style) chips.push(`style: ${payload.style}`);
+    if (payload.text_theme !== defaults.text_theme) chips.push(`theme: ${payload.text_theme}`);
+    if (payload.font !== defaults.font) chips.push(`font: ${payload.font}`);
+    if (payload.font_size !== defaults.font_size) chips.push(`fontsize: ${payload.font_size}`);
+    if (payload.outline !== defaults.outline) chips.push(`outline: ${payload.outline}`);
+    if (payload.show_title !== defaults.show_title) chips.push(`title: ${payload.show_title ? 'on' : 'off'}`);
+    if (payload.show_end_card !== defaults.show_end_card) chips.push(`endcard: ${payload.show_end_card ? 'on' : 'off'}`);
+
+    const summary = $('#summary');
+    if (summary) {
+      summary.innerHTML = chips.length
+        ? chips.map(t => `<span class="chip">${t}</span>`).join(' ')
+        : `<span class="chip">defaults</span>`;
+    }
+  }
+
+  // Live-change watchers to refresh summary/badges
+  document.addEventListener('input', (e) => {
+    const target = e.target || e.srcElement;
+    const form = document.getElementById('render-form');
+    if (!form || !target) return;
+    const insideForm = typeof target.closest === "function"
+      ? !!target.closest('#render-form')
+      : form.contains(target);
+    if (insideForm) {
+      updateSummaryAndBadges(getPayload());
+      if (typeof window.updateFontPreview === "function") {
+        window.updateFontPreview();
+      }
+    }
+  });
+
+  // Refresh Review Tab if activated
+  document.addEventListener('DOMContentLoaded', () => {
+    const reviewTabBtn = document.querySelector('.tab-btn[data-tab="workspace-review"]');
+    if (reviewTabBtn) {
+      reviewTabBtn.addEventListener('click', updateReviewTab);
+      // check if already active (e.g. reload)
+      if (reviewTabBtn.classList.contains('active')) updateReviewTab();
+    }
+  });
+
+  // Update Review Tab Info
+  async function updateReviewTab() {
+    // 1. Lyrics items
+    try {
+      const p = getPayload();
+      const styleEl = document.getElementById('rev-style');
+      if (styleEl) styleEl.textContent = p.style;
+      const themeEl = document.getElementById('rev-theme');
+      if (themeEl) themeEl.textContent = p.text_theme;
+
+      const shortFont = (p.font || "").replace(/['"]/g, "").split(',')[0];
+      const fontEl = document.getElementById('rev-font');
+      if (fontEl) fontEl.textContent = shortFont;
+
+      const sizeEl = document.getElementById('rev-size');
+      if (sizeEl) sizeEl.textContent = p.font_size + "px";
+
+      // 2. Images
+      const pbEl = document.getElementById('rev-playback');
+      if (pbEl) pbEl.textContent = (readValue('ui-img-playback', 'story') === 'loop') ? "Loop" : "Story";
+
+      // Identify selected images
+      // NOTE: project.js or inline scripts manage .selected state on .image-thumb
+      // We'll scrape DOM for images that have .image-thumb.selected
+      const gallery = document.getElementById('img-gallery');
+      const selImgs = gallery ? Array.from(gallery.querySelectorAll('.image-thumb'))
+        .filter(el => {
+          // The select toggle might be a checkbox or class. 
+          // Looking at project.html structure... 
+          // Actually relying on the internal state in project.js is hard from here.
+          // But usually there's a visual indicator. 
+          // Let's assume project.js marks a class 'selected' on the thumb or input is checked.
+          // Wait, line 383 says "Save selected images for render". Logic there knows.
+          // Let's peek at logic: we usually assume what's in the DOM gallery is candidates,
+          // and the "selected" ones are marked.
+          // If project.js doesn't mark class, we might need to inspect inputs.
+          const cb = el.querySelector('input[type="checkbox"]');
+          return cb && cb.checked;
+        })
+        .map(el => el.querySelector('img').src)
+        : [];
+
+      // If we can't find checkboxes (maybe they aren't there), try checking if the thumb involves a class.
+      // Re-reading previous `project.html` dump didn't show exact thumb structure fully, but usually there's a checkbox.
+
+      const countEl = document.getElementById('rev-img-count');
+      if (countEl) countEl.textContent = selImgs.length;
+
+      const grid = document.getElementById('rev-img-grid');
+      if (grid) {
+        grid.innerHTML = '';
+        selImgs.forEach(src => {
+          const div = document.createElement('div');
+          div.className = 'image-thumb';
+          div.style.padding = '4px';
+          const img = document.createElement('img');
+          img.src = src;
+          div.appendChild(img);
+          grid.appendChild(div);
+        });
+        if (selImgs.length === 0) {
+          grid.innerHTML = '<div class="muted" style="padding:10px;font-size:0.9em;">No images selected</div>';
+        }
+      }
+
+      // 3. Metadata (fetch fresh)
+      const r = await fetch(`/api/projects/${slug}/metadata`);
+      const j = await r.json();
+      if (j.ok && j.metadata) {
+        const tEl = document.getElementById('rev-meta-title');
+        if (tEl) tEl.textContent = j.metadata.title || "(no title tag)";
+        const dEl = document.getElementById('rev-meta-dur');
+        // Duration logic might need separate endpoint, if metadata doesn't have it.
+        // For now, if missing, show placeholder.
+        if (dEl) {
+          if (j.metadata.duration) {
+            const val = Number(j.metadata.duration);
+            const m = Math.floor(val / 60);
+            const s = Math.round(val % 60);
+            dEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+          } else {
+            dEl.textContent = "";
+          }
+        }
+      }
+
+    } catch (e) { console.error("Error updating review tab:", e); }
+  }
+
+
+  // Initialize summary once
+  updateSummaryAndBadges(getPayload());
+  if (typeof window.updateFontPreview === "function") {
+    window.updateFontPreview();
+  }
+
+  const logsPanel = document.getElementById('logsPanel');
+  const toggleLogs = document.getElementById('toggleLogs');
+  if (logsPanel && toggleLogs) {
+    toggleLogs.addEventListener('change', () => {
+      logsPanel.classList.toggle('collapsed', !toggleLogs.checked);
+    });
+    logsPanel.classList.add('collapsed');
+    toggleLogs.checked = false;
+  }
+</script>
+
+<script>
+  (function () {
+    const drawer = document.getElementById('txDrawer');
+    const backdrop = document.getElementById('txDrawerBackdrop');
+    if (!drawer || !backdrop) return;
+
+    const toggleDrawer = (open) => {
+      const shouldOpen = typeof open === "boolean" ? open : !drawer.classList.contains('open');
+      drawer.classList.toggle('open', shouldOpen);
+      backdrop.classList.toggle('active', shouldOpen);
+      drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+    };
+
+    const hook = (id, handler) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', handler);
+    };
+
+    hook('btnTxSettings', () => toggleDrawer(true));
+    hook('btnTxClose', () => toggleDrawer(false));
+    backdrop.addEventListener('click', () => toggleDrawer(false));
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') toggleDrawer(false);
+    });
+  })();
+</script>
+
+<script src="/static/project.js?v=9"></script>
+<script src="/static/paste-lyrics.js?v=1"></script>
+
+
+
+<style>
+  .submenu-box {
+    background: rgba(255, 255, 255, 0.05);
+    border-left: 2px solid rgba(255, 255, 255, 0.2);
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 0 4px 4px 0;
+  }
+</style>
+{% endblock %}

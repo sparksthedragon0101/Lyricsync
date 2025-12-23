@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel editor-panel">
+  <h2>Timing Editor - {{p.slug}}</h2>
+
+  <div class="row editor-controls">
+    <div class="controls-left">
+      <button id="play">▶️/⏸</button>
+      <button id="stop">⏹</button>
+      <button id="prev">⬅ line</button>
+      <button id="next">➡ line</button>
+      <button id="zoomIn">+</button>
+      <button id="zoomOut">-</button>
+    </div>
+    <div class="controls-right">
+      <span id="time">0.00s</span>
+      <span id="dirty" class="dirty hidden">⚠ unsaved</span>
+      <span id="status"></span>
+      <button id="btnShortcuts" type="button" class="ghost-btn">Shortcuts & Tips</button>
+    </div>
+  </div>
+  <p class="mobile-hint">Need the cheat sheet? Tap "Shortcuts & Tips".</p>
+  <div class="mobile-touch-bar" aria-label="Touch navigation">
+    <button id="mobilePlay" type="button">Play / Pause</button>
+    <button id="mobilePrev" type="button">Prev</button>
+    <button id="mobileNext" type="button">Next</button>
+    <button id="mobileSplit" type="button">Split</button>
+    <button id="mobileSave" type="button" class="accent">Save</button>
+  </div>
+
+  <div id="timeline">
+    <div class="timeline-hitbox" aria-hidden="true"></div>
+  </div>
+  <div id="wave"></div>
+  <div class="editor-grid">
+    <section class="left">
+      <h3>Lines</h3>
+      <ul id="lines"></ul>
+    </section>
+    <section class="right">
+      <h3>Selected</h3>
+      <div id="selNone">No selection</div>
+      <div id="selPanel" class="hidden">
+        <div>
+          <label for="selText">Text</label>
+          <textarea id="selText"></textarea>
+        </div>
+        <div class="row">
+          <label for="selStart">Start</label><input id="selStart" type="number" step="0.01" />
+          <label for="selEnd">End</label><input id="selEnd" type="number" step="0.01" />
+          <label for="selDur">Dur</label><input id="selDur" type="text" readonly />
+        </div>
+        <div class="row">
+          <button id="split" type="button">Split at cursor</button>
+          <button id="merge" type="button">Merge with next</button>
+          <label><input type="checkbox" id="ripple" /> Ripple shifts next lines</label>
+        </div>
+        <div class="row trim-row">
+          <button id="btnSetStart" type="button" class="ghost-btn small">Start = playhead</button>
+          <button id="btnSetEnd" type="button" class="ghost-btn small">End = playhead</button>
+          <span class="trim-hint">Quickly set timings from the current cursor.</span>
+        </div>
+        <div class="row">
+          <button id="addLineAfter" type="button">Add line</button>
+          <button id="deleteLine" type="button">Delete line</button>
+          <button id="btnCopyLines" type="button" class="ghost-btn">Copy lines</button>
+          <button id="btnPasteLines" type="button" class="ghost-btn">Paste lines</button>
+        </div>
+        <div id="wordTools" class="word-tools hidden">
+          <div class="word-tools-head">
+            <h4>Per-word Timing</h4>
+            <div class="fuzzy-controls">
+              <label>Fuzzy nudge
+                <select id="fuzzySize">
+                  <option value="0.01">10 ms</option>
+                  <option value="0.02" selected>20 ms</option>
+                  <option value="0.05">50 ms</option>
+                  <option value="0.1">100 ms</option>
+                </select>
+              </label>
+              <div class="fuzzy-btns">
+                <button class="ghost-btn fuzzy-btn" data-dir="-1" type="button">Earlier</button>
+                <button class="ghost-btn fuzzy-btn" data-dir="1" type="button">Later</button>
+              </div>
+            </div>
+          </div>
+          <div id="wordList" class="word-list muted">Word timings unavailable.</div>
+        </div>
+      </div>
+      <div class="row action-row">
+        <button id="save">💾 Save</button>
+        <button id="exportSrt">Export SRT</button>
+        <button id="importSrt">Import SRT</button>
+        <a class="btn" href="/api/projects/{{p.slug}}/download/edited.srt" target="_blank">Download edited.srt</a>
+        <button id="btnMetadata" class="ghost-btn">Metadata</button>
+      </div>
+    </section>
+  </div>
+</section>
+
+<div id="shortcutBackdrop" class="drawer-backdrop"></div>
+<aside id="shortcutDrawer" class="drawer" aria-hidden="true">
+  <header>
+    <h3>⌨ Keyboard Shortcuts & Tips</h3>
+    <button id="btnCloseShortcuts" type="button" class="ghost-btn small" aria-label="Close shortcuts">&times;</button>
+  </header>
+  <div class="drawer-body">
+    <ul>
+      <li><b>Space</b> – Play / Pause (prevents page scroll on desktop)</li>
+      <li><b>J / K</b> – Previous / Next line</li>
+      <li><b>L</b> – Toggle loop selected line • <b>P</b> – Play selection once</li>
+      <li><b>[ / ]</b> – Trim start / end to playhead</li>
+      <li><b>S</b> – Split at playhead • <b>M</b> – Merge with next line</li>
+      <li><b>Insert</b> – Add blank line • <b>Delete</b> – Remove line (prompts)</li>
+      <li><b>← / →</b> – Nudge segment (Shift=50 ms, Ctrl=1 ms)</li>
+      <li><b>G</b> – Validate overlaps/gaps • <b>Shift+G</b> – Auto-fix tiny gaps</li>
+      <li><b>Ctrl+S</b> – Save • <b>Ctrl+Z/Ctrl+Y</b> – Undo/Redo</li>
+      <li><b>+</b>/<b>-</b> – Zoom • <b>Ripple</b> checkbox shifts following lines while dragging</li>
+      <li>Autosaves run every 1.5 s after edits; watch for the “⚠ unsaved” badge.</li>
+    </ul>
+  </div>
+</aside>
+
+<style>
+  .editor-panel {
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+
+  /* Button Normalization */
+  .editor-panel button,
+  .editor-panel .btn {
+    font-family: inherit;
+    font-size: 0.95rem;
+    /* Unified size */
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
+  .editor-controls {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .controls-left,
+  .controls-right {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .mobile-touch-bar {
+    display: none;
+    gap: 8px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+  }
+
+  .mobile-touch-bar button {
+    flex: 1 1 120px;
+    font-size: 1rem;
+    padding: 10px;
+    border-radius: 999px;
+    border: 1px solid #2b3148;
+    background: #171c2c;
+    color: #f8fbff;
+  }
+
+  .mobile-touch-bar button.accent {
+    background: #2c5af7;
+    border-color: #2c5af7;
+  }
+
+  .trim-row {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .trim-row .trim-hint {
+    font-size: .85em;
+    color: #9aa4b9;
+  }
+
+  .ghost-btn {
+    background: #1b1f2c;
+    border: 1px solid #343b57;
+    color: #e1e6ff;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+
+  .ghost-btn.small {
+    padding: 4px 8px;
+    font-size: 1.3em;
+    line-height: 1;
+  }
+
+  .mobile-hint {
+    font-size: .9em;
+    color: #9aa4b9;
+    margin: 6px 0 10px;
+  }
+
+  .action-row {
+    flex-wrap: wrap;
+  }
+
+  #timeline,
+  #wave {
+    touch-action: none;
+    position: relative;
+    z-index: 10;
+  }
+
+  #timeline .timeline-hitbox {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    touch-action: manipulation;
+    z-index: 20;
+  }
+
+  .story-panel,
+  .story-prompts-panel,
+  #story-prompts-panel,
+  #story-prompts-panel *,
+  .story-region,
+  .story-list,
+  .story-list *,
+  #story-list,
+  #story-list *,
+  .story-inline-actions,
+  .story-inline-actions * {
+    display: none !important;
+    pointer-events: none !important;
+  }
+
+  .word-tools {
+    margin-top: 16px;
+    border-top: 1px solid #2a2a2a;
+    padding-top: 12px;
+  }
+
+  .word-tools.hidden {
+    display: none;
+  }
+
+  .word-tools-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .fuzzy-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .fuzzy-controls select {
+    background: #050505;
+    border: 1px solid #2a2a2a;
+    color: #fff;
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+
+  .fuzzy-btns {
+    display: flex;
+    gap: 6px;
+  }
+
+  .word-list {
+    margin-top: 10px;
+    max-height: 220px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .word-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #0b0f1c;
+    border: 1px solid #1f2333;
+    border-radius: 8px;
+    padding: 6px 10px;
+  }
+
+  .word-row input {
+    width: 90px;
+    background: #050505;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    color: #fff;
+    padding: 4px 6px;
+  }
+
+  .word-text {
+    flex: 1;
+    font-weight: 600;
+    color: #e1e6ff;
+  }
+
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+    z-index: 90;
+  }
+
+  .drawer-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .drawer {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 320px;
+    max-width: 90vw;
+    height: 100vh;
+    background: #0f1320;
+    border-left: 1px solid #232634;
+    box-shadow: -8px 0 18px rgba(0, 0, 0, .45);
+    transform: translateX(100%);
+    transition: transform .28s ease;
+    z-index: 99;
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .drawer.open {
+    transform: translateX(0);
+  }
+
+  .drawer header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .drawer-body {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .drawer-body ul {
+    margin: 0;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  @media (max-width: 960px) {
+    .editor-grid {
+      grid-template-columns: 1fr;
+    }
+
+    #wave {
+      height: 160px;
+    }
+
+    .left ul {
+      max-height: 260px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    main {
+      padding: 10px;
+    }
+
+    .panel {
+      padding: 10px;
+    }
+
+    .editor-controls {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .controls-right {
+      justify-content: space-between;
+    }
+
+    .mobile-touch-bar {
+      display: flex;
+      position: sticky;
+      top: 0;
+      z-index: 6;
+      padding: 8px;
+      background: rgba(10, 12, 20, 0.95);
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .row {
+      flex-wrap: wrap;
+    }
+
+    .left ul {
+      max-height: 200px;
+    }
+
+    .mobile-hint {
+      text-align: center;
+    }
+  }
+</style>
+
+<link rel="stylesheet" href="{{ url_for('static', path='vendor/wavesurfer.min.css') }}" />
+<script src="https://unpkg.com/wavesurfer.js@7.7.11/dist/wavesurfer.min.js"></script>
+<script src="https://unpkg.com/wavesurfer.js@7.7.11/dist/plugins/regions.min.js"></script>
+<script src="https://unpkg.com/wavesurfer.js@7.7.11/dist/plugins/timeline.min.js"></script>
+<script>
+  const SLUG = "{{p.slug}}";
+
+  (function initShortcutDrawer() {
+    const drawer = document.getElementById('shortcutDrawer');
+    const backdrop = document.getElementById('shortcutBackdrop');
+    if (!drawer || !backdrop) return;
+    const toggle = (open) => {
+      const shouldOpen = typeof open === "boolean" ? open : !drawer.classList.contains('open');
+      drawer.classList.toggle('open', shouldOpen);
+      backdrop.classList.toggle('active', shouldOpen);
+      drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+    };
+    document.getElementById('btnShortcuts')?.addEventListener('click', () => toggle(true));
+    document.getElementById('btnCloseShortcuts')?.addEventListener('click', () => toggle(false));
+    backdrop.addEventListener('click', () => toggle(false));
+    document.addEventListener('keydown', (evt) => {
+      if (evt.key === 'Escape') toggle(false);
+    });
+  })();
+
+  // Prevent mobile/desktop browsers from scrolling when spacebar is meant to control playback.
+  document.addEventListener('keydown', (evt) => {
+    if (evt.code !== 'Space') return;
+    const tag = (evt.target?.tagName || '').toLowerCase();
+    const isEditable = evt.target?.isContentEditable || ['input', 'textarea'].includes(tag);
+    if (!isEditable) {
+      evt.preventDefault();
+    }
+  }, { capture: true });
+</script>
+<script src="/static/editor.js"></script>
+{% endblock %}
