@@ -1,3 +1,7 @@
+**Note**: This was a Zero Code project for myself. I am not a developer, everything in this has been AI generated. I made this because I have been struggling from burnout for a while now and the process of making a lyricvideo was frustrating to the point of not wanting to do it at all. 
+
+ - I know there is an issue where uploading the image at the start of the project will not actually populate it to the images section. This is because I just added on the image generation stuff and now the images live in a different folder. You can get around this by just waiting to upload an image until after the project creation. 
+
 # Lyricsync
 
 **Lyricsync** is a powerful tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
@@ -8,6 +12,13 @@
 - **SRT Export**: Generates perfectly timed subtitles.
 - **Web Interface**: Interactive editor for fine-tuning lyrics and styles.
 - **Preview Generation**: Optional MP4 preview with burned-in subtitles.
+- **Title Metatag Editing**: In the lyric timing editor you can update the Title metatag data in case it gets striped or was non-existant in the first place.
+
+##Incomplete Features
+- **Image Generation**: You need to point the program to where you have your checkpoints saved
+- **AI Assist Image Prompt**: This is currently only set up for Ollama only.
+- **Image Style Prompts**: I just began working on getting the stylized prompts so only one of them really working out of the box (Stylized - Pixel Art)
+- **LORA's**: I tried adding these but I am not sure how effective they have been in my testing.
 
 ## Installation
 
@@ -94,6 +105,3 @@ Then visit `http://localhost:8787` in your browser.
 - `lyricsync_web/`: FastAPI web application code.
 - `effects/`: Visual effect processors.
 - `configs/`: Theme and configuration files.
-
-## License
-[Your License Here]
