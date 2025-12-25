@@ -1,7 +1,7 @@
 **Note**: This was a Zero Code project for myself. I am not a developer, everything in this has been AI generated. I made this because I have been struggling from burnout for a while now and the process of making a lyricvideo was frustrating to the point of not wanting to do it at all. 
 
  - I know there is an issue where uploading the image at the start of the project will not actually populate it to the images section. This is because I just added on the image generation stuff and now the images live in a different folder. You can get around this by just waiting to upload an image until after the project creation. 
-
+ - For those running on windows I have included 2 batch files. One for running the web app and one for running the CLI. The batch files are named autorun.bat and lyricsync_gui.bat. The autorun file will start up the server on port 8787. Lyricsync_gui is how I first ran and tested the program and may no longer work as a large part of the program has been modified since it was last updated. It is a commandline ran menu that will allow you to run the basics of the program without having to use the web app, excluding the image generation.
 # Lyricsync
 
 **Lyricsync** is a powerful tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
