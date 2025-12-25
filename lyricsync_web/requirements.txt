@@ -32,3 +32,4 @@ requests==2.32.3
 colorama==0.4.6
 ollama==0.1.7
 srt==3.5.3
+compel==2.0.2

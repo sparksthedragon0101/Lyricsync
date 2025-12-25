@@ -57,9 +57,27 @@ def _run_generation_sync(job_id: str, req: GenRequest, pipe, progress_cb: Progre
         return {}
 
     progress_cb({"progress": "starting diffusion steps"})
+    
+    # Use Compel for long prompt support
+    from compel import Compel, ReturnedEmbeddingsType
+    
+    # Initialize Compel for SDXL (requires both tokenizers/encoders)
+    compel = Compel(
+        tokenizer=[pipe.tokenizer, pipe.tokenizer_2],
+        text_encoder=[pipe.text_encoder, pipe.text_encoder_2],
+        returned_embeddings_type=ReturnedEmbeddingsType.PENULTIMATE_HIDDEN_STATES_NON_NORMALIZED,
+        requires_pooled=[False, True]
+    )
+    
+    # Generate embeddings
+    conditioning, pooled = compel(req.prompt)
+    neg_conditioning, neg_pooled = compel(req.negative_prompt)
+    
     out = pipe(
-        prompt=req.prompt,
-        negative_prompt=req.negative_prompt,
+        prompt_embeds=conditioning,
+        pooled_prompt_embeds=pooled,
+        negative_prompt_embeds=neg_conditioning,
+        negative_pooled_prompt_embeds=neg_pooled,
         width=req.width,
         height=req.height,
         num_inference_steps=req.steps,
@@ -225,3 +243,56 @@ async def _gpu_worker():
                             torch.cuda.empty_cache()
                         except Exception:
                             pass
+
+
+async def force_reset_worker() -> dict:
+    """Force clears the job queue and unloads all models to free VRAM."""
+    import gc
+    
+    # 1. Clear queue
+    cleared_jobs = 0
+    while not JOB_QUEUE.empty():
+        try:
+            JOB_QUEUE.get_nowait()
+            JOB_QUEUE.task_done()
+            cleared_jobs += 1
+        except asyncio.QueueEmpty:
+            break
+            
+    # 2. Unload all pipelines
+    unloaded_models = []
+    keys_to_remove = list(_PIPE_CACHE.keys())
+    
+    for key in keys_to_remove:
+        # Force release even if locked/active (reset scenario)
+        _ACTIVE_PIPELINES.discard(key)
+        _KEEP_ALIVE_KEYS.discard(key)
+        
+        cached = _PIPE_CACHE.pop(key, None)
+        if cached:
+            try:
+                # Move to CPU to free GPU ram immediately
+                if hasattr(cached, "to"):
+                    cached.to("cpu")
+                # Explicitly delete
+                del cached
+            except Exception:
+                pass
+            unloaded_models.append(f"{key[0]} ({key[1]})")
+
+    # 3. Garbage collection and CUDA cache clear
+    gc.collect()
+    if torch.cuda.is_available():
+        try:
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
+            
+    logger.warning("Worker forced reset. Cleared %d jobs, unloaded: %s", cleared_jobs, unloaded_models)
+    
+    return {
+        "cleared_jobs": cleared_jobs,
+        "unloaded_models": unloaded_models,
+        "vram_cleared": True
+    }

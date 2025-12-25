@@ -93,8 +93,8 @@ const STYLE_HINTS = {
     instruction: 'anime illustration with cel shading and vibrant colors',
   },
   animated: {
-    prompt: '3d animated film frame, pixar style, soft lighting, expressive characters',
-    instruction: '3d animated film still, pixar-like rendering',
+    prompt: 'animated work, 2d hand-drawn aesthetic, vibrant colors, expressive',
+    instruction: 'animated work, 2d hand-drawn aesthetic, vibrant colors, expressive',
   },
   landscape: {
     prompt: 'epic wide landscape, sweeping vista, detailed environment, golden hour',
@@ -104,7 +104,7 @@ const STYLE_HINTS = {
 
 const ImageGeneratorAPI = {};
 
-const CLIP_MAX_TOKENS = 70;
+const CLIP_MAX_TOKENS = 9999;
 function clipTruncate(text) {
   const raw = typeof text === 'string' ? text.trim() : '';
   if (!raw) {
@@ -1406,10 +1406,75 @@ async function saveProjectImageSelection(paths) {
     const modelSelect = document.getElementById('img-model');
     const countInput = document.getElementById('img-count');
     const seedInput = document.getElementById('img-seed');
-    const widthInput = document.getElementById('img-width');
-    const heightInput = document.getElementById('img-height');
+    const widthInput = null; // Removed
+    const heightInput = null; // Removed
+    const aspectSelect = document.getElementById('img-aspect');
+    const resolutionSelect = document.getElementById('img-resolution');
     const stepsInput = document.getElementById('img-steps');
     const statusEl = document.getElementById('img-status');
+
+
+    // Helper to calculate dimensions
+    function getDimensions() {
+      const ar = aspectSelect ? aspectSelect.value : '16:9';
+      const baseRes = resolutionSelect ? parseInt(resolutionSelect.value, 10) : 1080;
+      let w = 1024, h = 576;
+
+      if (ar === '1:1') {
+        w = baseRes;
+        h = baseRes;
+      } else if (ar === '9:16') {
+        w = Math.round(baseRes * (9 / 16)); // This logic is tricky if baseRes is height.
+        // Wait, "1080p" usually means 1080 vertical.
+        // For 16:9 1080p -> 1920x1080
+        // For 9:16 1080p -> 1080x1920? Or 608x1080?
+        // Let's assume the user means the "major" dimension or vertical lines.
+        // Standard convention: "1080p" = 1080px HEIGHT (for landscape).
+
+        // Let's implement strict logic based on user request:
+        // 480p -> 480 lines
+        // 720p -> 720 lines
+        // 1080p -> 1080 lines
+
+        if (ar === '16:9') {
+          h = baseRes;
+          w = Math.round(h * (16 / 9));
+        } else if (ar === '9:16') {
+          // For vertical "1080p" video usually means 1080x1920 canvas? 
+          // Or does it mean same pixel density?
+          // Usually "1080p Shorts" means 1080x1920.
+          // If baseRes is 1080 (the short side or the standard naming convention container):
+          // Let's interpret "1080p" as the SHORTEST side for square/landscape, and WIDTH for portrait? 
+          // No, "1080p" is almost always the vertical count (scan lines).
+
+          // If I select 1080p (Quality) and 9:16:
+          // Should it be 1080 wide x 1920 high? Yes that is "Full HD Portrait".
+          // If I select 480p and 9:16 -> 480x854.
+
+          w = baseRes; // width is the "p" count? No, usually p is height.
+          // BUT for 9:16, usually we want high quality.
+          // Let's stick to: "Resolution" = The smallest dimension (approx).
+          // 1:1 1080p -> 1080x1080
+          // 16:9 1080p -> 1920x1080
+          // 9:16 1080p -> 1080x1920
+
+          w = baseRes;
+          h = Math.round(w * (16 / 9));
+        }
+      } else {
+        // Default 16:9
+        h = baseRes;
+        w = Math.round(h * (16 / 9));
+      }
+
+      // Snap to multiples of 8 for SD
+      w = Math.round(w / 8) * 8;
+      h = Math.round(h / 8) * 8;
+      return { w, h };
+    }
+
+    // ...
+
     const generateBtn = document.getElementById('img-generate-btn');
     const pipelineBtn = document.getElementById('img-pipeline-btn');
     const pipelineStatusEl = document.getElementById('img-pipeline-status');
@@ -1923,13 +1988,16 @@ async function saveProjectImageSelection(paths) {
       const negative = typeof overrides.negative === 'string'
         ? overrides.negative
         : (negativeEl ? negativeEl.value : '');
+      // Calculate dims
+      const { w, h } = getDimensions();
+
       const payload = {
         slug,
         model_id: modelId,
         prompt: clipResult.text,
         negative_prompt: negative,
-        width: clampInt(overrides.width ?? (widthInput ? widthInput.value : 1024), 512, 2048),
-        height: clampInt(overrides.height ?? (heightInput ? heightInput.value : 1024), 288, 1536),
+        width: clampInt(overrides.width ?? w, 256, 2048),
+        height: clampInt(overrides.height ?? h, 256, 2048),
         steps: clampInt(overrides.steps ?? (stepsInput ? stepsInput.value : 28), 1, 80),
         guidance: typeof overrides.guidance === 'number' ? overrides.guidance : 6.5,
         seed: overrides.seed ?? (seedInput && seedInput.value ? Number(seedInput.value) : null),
@@ -2065,7 +2133,7 @@ async function saveProjectImageSelection(paths) {
       }
     });
 
-    function setupDirectoryModal(targetBtn, type) {
+    function initDirectoryModal() {
       const modal = document.getElementById('modelDirModal');
       const input = document.getElementById('model-dir-input');
       const saveBtn = document.getElementById('model-dir-save');
@@ -2073,27 +2141,40 @@ async function saveProjectImageSelection(paths) {
       const status = document.getElementById('model-dir-status');
       const titleEl = modal ? modal.querySelector('h3') : null;
       const descEl = modal ? modal.querySelector('p') : null;
+
+      // Fallback if modal missing
       if (!modal || !input || !saveBtn || !cancelBtn || !status) {
-        targetBtn?.addEventListener('click', async () => {
-          const path = window.prompt(`Enter ${type.toUpperCase()} directory path`);
-          if (!path) return;
-          try {
-            await saveDirectoryPath(type, path);
-          } catch (err) {
-            window.alert(err.message || 'Failed to save directory.');
-          }
-        });
+        const setupFallback = (btn, type) => {
+          btn?.addEventListener('click', async () => {
+            const path = window.prompt(`Enter ${type.toUpperCase()} directory path`);
+            if (!path) return;
+            try {
+              await saveDirectoryPath(type, path);
+            } catch (err) {
+              window.alert(err.message || 'Failed to save directory.');
+            }
+          });
+        };
+        setupFallback(modelDirBtn, 'model');
+        setupFallback(loraDirBtn, 'lora');
         return;
       }
+
+      let activeType = null;
+
       const closeModal = () => {
         modal.setAttribute('hidden', 'hidden');
         status.textContent = '';
+        activeType = null;
       };
+
       cancelBtn.addEventListener('click', closeModal);
       modal.addEventListener('click', (evt) => {
         if (evt.target === modal) closeModal();
       });
+
       saveBtn.addEventListener('click', async () => {
+        if (!activeType) return;
         const path = input.value.trim();
         if (!path) {
           status.textContent = 'Enter a directory path.';
@@ -2103,7 +2184,7 @@ async function saveProjectImageSelection(paths) {
         status.textContent = 'Saving...';
         status.style.color = '';
         try {
-          await saveDirectoryPath(type, path);
+          await saveDirectoryPath(activeType, path);
           status.textContent = 'Saved.';
           status.style.color = '#9cd7ff';
           setTimeout(closeModal, 600);
@@ -2112,25 +2193,32 @@ async function saveProjectImageSelection(paths) {
           status.style.color = '#ff8f8f';
         }
       });
-      targetBtn?.addEventListener('click', async () => {
-        modal.removeAttribute('hidden');
-        status.textContent = '';
-        if (titleEl) {
-          titleEl.textContent = type === 'model' ? 'Set Model Directory' : 'Set LoRA Directory';
-        }
-        if (descEl) {
-          descEl.textContent = type === 'model'
-            ? 'Enter the folder path that contains your diffusion checkpoints.'
-            : 'Enter the folder path that contains your LoRA adapters.';
-        }
-        try {
-          const existing = await fetchDirectoryPath(type);
-          input.value = existing || '';
-        } catch {
-          input.value = '';
-        }
-        input.focus();
-      });
+
+      const setupTrigger = (btn, type) => {
+        btn?.addEventListener('click', async () => {
+          activeType = type;
+          modal.removeAttribute('hidden');
+          status.textContent = '';
+          if (titleEl) {
+            titleEl.textContent = type === 'model' ? 'Set Model Directory' : 'Set LoRA Directory';
+          }
+          if (descEl) {
+            descEl.textContent = type === 'model'
+              ? 'Enter the folder path that contains your diffusion checkpoints.'
+              : 'Enter the folder path that contains your LoRA adapters.';
+          }
+          try {
+            const existing = await fetchDirectoryPath(type);
+            input.value = existing || '';
+          } catch {
+            input.value = '';
+          }
+          input.focus();
+        });
+      };
+
+      setupTrigger(modelDirBtn, 'model');
+      setupTrigger(loraDirBtn, 'lora');
     }
 
     async function fetchDirectoryPath(type) {
@@ -2161,8 +2249,7 @@ async function saveProjectImageSelection(paths) {
       await loadModelData();
     }
 
-    setupDirectoryModal(modelDirBtn, 'model');
-    setupDirectoryModal(loraDirBtn, 'lora');
+    initDirectoryModal();
 
     modelSelect.addEventListener('change', () => {
       ImageGeneratorAPI.pipelineActive = false;
@@ -2311,9 +2398,13 @@ async function saveProjectImageSelection(paths) {
         const payload = {
           model,
           style: styleEl ? styleEl.value : null,
-          sub_style: (styleEl && styleEl.value === 'stylized')
-            ? (document.getElementById('img-sub-stylized')?.value || null)
-            : null,
+          sub_style: (function () {
+            if (!styleEl) return null;
+            if (styleEl.value === 'stylized') return document.getElementById('img-sub-stylized')?.value || null;
+            if (styleEl.value === 'anime') return document.getElementById('img-sub-anime')?.value || null;
+            if (styleEl.value === 'animated') return document.getElementById('img-sub-animated')?.value || null;
+            return null;
+          })(),
           no_humans: !!(noHumansEl && noHumansEl.checked),
         };
         const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/image_prompt`, {

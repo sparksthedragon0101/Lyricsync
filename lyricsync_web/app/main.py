@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Optional, List, Any, Dict
 
 import httpx
+import warnings
+
+# Suppress benign warning from diffusers when offloading float16 models to CPU
+warnings.filterwarnings("ignore", message=".*Pipelines loaded with `dtype=torch.float16` cannot run with `cpu` device.*")
+
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Response, Body
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -46,7 +51,7 @@ from .projects import (
 )
 from .jobs import JobManager
 from .srt_json import ensure_project_from_srt, load_project, save_project, export_srt, parse_srt
-from image_pipeline.worker import start_worker
+from image_pipeline.worker import start_worker, force_reset_worker
 
 # ---------------------------------------------------------------------------
 # Windows / Python 3.13 asyncio regression workaround:
@@ -145,7 +150,7 @@ STYLE_HINTS = {
     "photorealistic": "photorealistic, detailed photography with lifelike lighting",
     "stylized": "stylized concept art with painterly brush strokes",
     "anime": "anime illustration with cel shading and bold lighting",
-    "animated": "3d animated film still with soft lighting and expressive characters",
+    "animated": "animated work, 2d hand-drawn aesthetic, vibrant colors, expressive",
     "landscape": "epic wide environmental landscape shot with sweeping vistas",
 }
 
@@ -153,7 +158,31 @@ SUB_STYLE_HINTS = {
     "generic": "stylized concept art, digital painting, highly detailed, evocative composition",
     "pixel_art": "Strictly pixel art, 16-bit retro game style, blocky, low-res aesthetic, sharp edges. Do NOT use brush strokes, blurring, or painterly terms.",
     "3d_render": "3D CGI render, Octane render, digital art, ray-traced, sharp focus, Unreal Engine 5 style, hyper-realistic materials.",
-    "surrealist": "Surrealist art, dreamlike, Salvador Dali style, impossible geometry, melting forms, strange, ethereal, psychological horror elements."
+    "surrealist": "Surrealist art, dreamlike, Salvador Dali style, impossible geometry, melting forms, strange, ethereal, psychological horror elements.",
+    # Anime Decades
+    "anime_80s": "1980s cel-shaded anime style, retro aesthetic, grain, hand-drawn animation, detailed mechanical designs, vintage color palette",
+    "anime_90s": "1990s anime aesthetic, golden age style, detailed cel shading, atmospheric lighting, hand-drawn nostalgic feel",
+    "anime_00s": "early 2000s digital anime style, sharp lines, experimental coloring, transition era aesthetic",
+    # Anime Studios
+    "anime_ghibli": "Studio Ghibli style, Hayao Miyazaki, hand-painted backgrounds, lush nature, soft wind, whimsical, detailed clouds, watercolor aesthetic",
+    "anime_mappa": "MAPPA studio style, high contrast, dynamic camera angles, detailed particle effects, modern clean lines, cinematic lighting",
+    "anime_trigger": "Studio Trigger style, hyper-dynamic, neon accents, sharp geometric shapes, exaggerated perspective, vibrant and poppy colors",
+    "anime_kyoani": "Kyoto Animation style, KyoAni, moist eyes, incredibly detailed hair, soft lighting, emotional atmosphere, high production value",
+    "anime_ufotable": "Ufotable style, digital compositing, intense particle effects, deep colors, cinematic depth of field, high-budget visual fidelity",
+    "anime_madhouse": "Madhouse studio style, dark and gritty, detailed linework, mature aesthetic, dramatic shadows, high frame-rate feel",
+    "anime_sunrise": "Sunrise/Bandai style, mecha aesthetic, detailed mechanical shading, epic scale, space opera vibes, dramatic posing",
+    "anime_shaft": "Studio Shaft style, Shinbo Akiyuki, head tilts, abstract backgrounds, avant-garde composition, text overlays, minimal but striking colors",
+    # Western Animation
+    "anim_looney": "classic looney tunes style, hand-painted backgrounds, slapstick energy, exaggerated features, golden age animation",
+    "anim_disney": "classic disney animation style, 1950s hand-drawn, rich technicolor, fluid movement, fairytale aesthetic",
+    "anim_simpsons": "simpsons style, matt groening, flat colors, yellow skin, simple distinct outlines, satirical cartoon aesthetic",
+    "anim_southpark": "south park style, construction paper cutout aesthetic, geometric simplicity, textured paper look, stop-motion feel",
+    "anim_nickelodeon": "classic 90s nickelodeon cartoon style, rugrats/ren&stimpy aesthetic, squiggly lines, wacky color palettes, offbeat character designs",
+    "anim_cel": "traditional 2d cel animation, ink and paint, hand-drawn, authentic animation cells, vintage aesthetic",
+    "anim_digital": "modern digital 2d animation, clean vector lines, flash animation style, crisp colors, smooth tweening",
+    "anim_clay": "claymation style, ardman/laika aesthetic, plasticine texture, visible fingerprints, studio lighting, miniature set",
+    "anim_cutout": "cutout stop-motion, terry gilliam style, collage aesthetic, rough edges, disjointed movement feel",
+    "anim_rotoscope": "rotoscope animation, a scanner darkly style, traced realism, dreamlike movement, shifting lines, uncanny valley aesthetic"
 }
 PROJECTS_LOGGER = logging.getLogger("lyricsync.api.projects")
 def clean_lyrics(raw: str) -> str:
@@ -401,6 +430,13 @@ def api_set_storage_paths(req: StoragePathRequest):
     }
 
     
+@app.post("/api/system/reset")
+async def api_system_reset():
+    """Triggers a forced cleanup of VRAM and worker state."""
+    result = await force_reset_worker()
+    return {"ok": True, "details": result}
+
+
 @app.get("/projects/{slug}", response_class=HTMLResponse)
 def project_page(request: Request, slug: str):
     try:
@@ -616,12 +652,34 @@ def _read_lyrics_for_prompt(p) -> str:
 def _parse_prompt_response(payload: str) -> tuple[str, str]:
     positive = ""
     negative = ""
-    try:
-        data = json.loads(payload)
-        positive = str(data.get("positive", "")).strip()
-        negative = str(data.get("negative", "")).strip()
-    except Exception:
-        pass
+    
+    # 1. Strip Markdown code blocks
+    clean_payload = payload.strip()
+    if "```" in clean_payload:
+        # aggressive strip of code fences
+        clean_payload = re.sub(r"```[a-zA-Z]*\n?", "", clean_payload).replace("```", "").strip()
+
+    # 2. Try to find the JSON object bounds { ... }
+    # multiple models might output text before/after the JSON
+    json_start = clean_payload.find("{")
+    json_end = clean_payload.rfind("}")
+    if json_start != -1 and json_end != -1 and json_end > json_start:
+        candidate = clean_payload[json_start : json_end + 1]
+        try:
+            data = json.loads(candidate)
+            positive = str(data.get("positive", "")).strip()
+            negative = str(data.get("negative", "")).strip()
+        except Exception:
+            pass
+
+    # 3. If standard JSON extraction failed, try the original full payload
+    if not positive:
+        try:
+            data = json.loads(clean_payload)
+            positive = str(data.get("positive", "")).strip()
+            negative = str(data.get("negative", "")).strip()
+        except Exception:
+            pass
 
     if not positive:
         # fallback: look for "Positive:" style labels
@@ -631,9 +689,14 @@ def _parse_prompt_response(payload: str) -> tuple[str, str]:
             segment = payload[idx:]
             parts = segment.split("\n", 1)
             if parts:
-                positive = parts[-1].strip()
+                positive = parts[-1].split("Negative")[0].strip() # try to stop before Negative
         if not positive:
-            positive = payload.strip()
+            # Last resort: just cleanup the raw text if it looks like JSON info
+            # prevent dumping the whole JSON blob if possible
+            if "{" in payload and "}" in payload:
+                 positive = "Failed to parse prompt."
+            else:
+                 positive = payload.strip()
 
     if not negative:
         for marker in ("negative:", "neg:", "negative prompt:"):
@@ -746,7 +809,10 @@ def api_image_prompt(slug: str, req: ImagePromptRequest):
             "content": (
                 "You analyze song lyrics and craft Stable Diffusion prompts. "
                 "Respond strictly as compact JSON: {\"positive\": \"...\", \"negative\": \"...\"}. "
-                "Positive prompt should be cinematic and vivid. Negative prompt should list things to avoid."
+                "Do NOT use markdown, do NOT use code blocks. Return only validity JSON."
+                "Positive prompt should be visually evocative, highly detailed, and strictly follow the desired style."
+                "You may use long, descriptive sentences to fully capture the mood and imagery."
+                "If the lyrics mention airplanes or vehicles, describe them as 'aerodynamic', 'symmetrical', and 'structurally logic' to avoid distortion."
             ),
         },
     ]
@@ -775,6 +841,9 @@ def api_image_prompt(slug: str, req: ImagePromptRequest):
     
     try:
         resp = _ollama_client.chat(messages=messages, model=req.model, temperature=req.temperature, timeout=180)
+        # Attempt to unload the model immediately to save VRAM
+        if hasattr(_ollama_client, "unload"):
+            _ollama_client.unload(req.model)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Ollama request failed: {exc}") from exc
 

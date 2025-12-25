@@ -328,10 +328,48 @@
                     </select>
                   </div>
                   <div id="submenu-anime" hidden class="submenu-box">
-                    <small class="muted">Anime options (coming soon)</small>
+                    <label style="font-size:0.9em; display:block; margin-bottom:4px; color:#ccc;">Anime Style
+                      Detail</label>
+                    <select id="img-sub-anime"
+                      style="width:100%; font-size:0.9em; padding:4px; background:rgba(0,0,0,0.2); border:1px solid #444; color:#fff; border-radius:4px;">
+                      <option value="anime_90s">90s Golden Age</option>
+                      <optgroup label="Decades">
+                        <option value="anime_80s">80s Retro (Cel Shaded)</option>
+                        <option value="anime_90s">90s Classic</option>
+                        <option value="anime_00s">Early 2000s</option>
+                      </optgroup>
+                      <optgroup label="Studios">
+                        <option value="anime_ghibli">Studio Ghibli</option>
+                        <option value="anime_mappa">MAPPA</option>
+                        <option value="anime_trigger">Studio Trigger</option>
+                        <option value="anime_kyoani">Kyoto Animation</option>
+                        <option value="anime_ufotable">Ufotable</option>
+                        <option value="anime_madhouse">Madhouse</option>
+                        <option value="anime_sunrise">Sunrise (Mecha)</option>
+                        <option value="anime_shaft">Shaft</option>
+                      </optgroup>
+                    </select>
                   </div>
                   <div id="submenu-animated" hidden class="submenu-box">
-                    <small class="muted">Animated options (coming soon)</small>
+                    <label style="font-size:0.9em; display:block; margin-bottom:4px; color:#ccc;">Instruction
+                      Style</label>
+                    <select id="img-sub-animated"
+                      style="width:100%; font-size:0.9em; padding:4px; background:rgba(0,0,0,0.2); border:1px solid #444; color:#fff; border-radius:4px;">
+                      <optgroup label="TV Classics">
+                        <option value="anim_looney">Looney Tunes</option>
+                        <option value="anim_disney">Classic Disney</option>
+                        <option value="anim_simpsons">The Simpsons</option>
+                        <option value="anim_southpark">South Park</option>
+                        <option value="anim_nickelodeon">90s Nickelodeon</option>
+                      </optgroup>
+                      <optgroup label="techniques">
+                        <option value="anim_cel">Traditional 2D Cel</option>
+                        <option value="anim_digital">Digital 2D</option>
+                        <option value="anim_clay">Stopmotion (Clay)</option>
+                        <option value="anim_cutout">Stopmotion (Cutout)</option>
+                        <option value="anim_rotoscope">Rotoscope</option>
+                      </optgroup>
+                    </select>
                   </div>
                 </div>
               </label>
@@ -368,12 +406,20 @@
                   <input id="img-seed" type="number" placeholder="random">
                 </label>
                 <label>
-                  Width
-                  <input id="img-width" type="number" min="512" max="2048" step="32" value="1280">
+                  Resolution
+                  <select id="img-resolution">
+                    <option value="480">480p</option>
+                    <option value="720">720p</option>
+                    <option value="1080" selected>1080p</option>
+                  </select>
                 </label>
                 <label>
-                  Height
-                  <input id="img-height" type="number" min="288" max="1536" step="32" value="736">
+                  Aspect Ratio
+                  <select id="img-aspect">
+                    <option value="1:1">Box (1:1)</option>
+                    <option value="16:9" selected>Landscape (16:9)</option>
+                    <option value="9:16">Portrait (9:16)</option>
+                  </select>
                 </label>
                 <label>
                   Steps
@@ -2153,7 +2199,7 @@
   })();
 </script>
 
-<script src="/static/project.js?v=9"></script>
+<script src="/static/project.js?v=13"></script>
 <script src="/static/paste-lyrics.js?v=1"></script>
 
 

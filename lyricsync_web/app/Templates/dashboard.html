@@ -24,7 +24,8 @@
       </form>
       <ul id="font-list" class="font-list"></ul>
       <p class="muted" style="margin-top:8px;">
-        Need fonts? Grab free ones at <a href="https://www.dafont.com" target="_blank" rel="noopener">dafont.com</a>, then upload the .ttf/.otf here.
+        Need fonts? Grab free ones at <a href="https://www.dafont.com" target="_blank" rel="noopener">dafont.com</a>,
+        then upload the .ttf/.otf here.
       </p>
     </div>
 
@@ -34,7 +35,8 @@
         <div class="storage-row">
           <div class="storage-info">
             <div class="storage-label">Projects root</div>
-            <div class="muted small">Current: <code id="projects-path-display">{{ storage_paths.projects_root }}</code></div>
+            <div class="muted small">Current: <code id="projects-path-display">{{ storage_paths.projects_root }}</code>
+            </div>
           </div>
           <button type="button" class="btn" id="btnPickProjects">Choose folder</button>
         </div>
@@ -50,14 +52,26 @@
         Saved to <code>{{ storage_paths.env_file }}</code>. Restart the server/container after changing paths.
       </p>
       <p class="muted" style="margin-top:4px;">
-        Docker: set <code>LYRICSYNC_DATA_ROOT</code> (or <code>LYRICSYNC_PROJECTS_ROOT</code>/<code>LYRICSYNC_FONTS_ROOT</code>) and bind-mount that path.
+        Docker: set <code>LYRICSYNC_DATA_ROOT</code> (or
+        <code>LYRICSYNC_PROJECTS_ROOT</code>/<code>LYRICSYNC_FONTS_ROOT</code>) and bind-mount that path.
       </p>
       <p class="muted" style="margin-top:4px;">
-        Defaults: projects <code>{{ storage_paths.defaults.projects }}</code>, fonts <code>{{ storage_paths.defaults.fonts }}</code>.
+        Defaults: projects <code>{{ storage_paths.defaults.projects }}</code>, fonts
+        <code>{{ storage_paths.defaults.fonts }}</code>.
       </p>
       <div id="storage-status" class="muted" style="margin-top:6px;"></div>
       <input type="file" id="projects-folder-input" webkitdirectory directory style="display:none;">
       <input type="file" id="fonts-folder-input" webkitdirectory directory style="display:none;">
+    </div>
+
+    <div class="card-subpanel">
+      <h3>System Maintenance</h3>
+      <p class="muted" style="margin-bottom:8px;">
+        Force clear VRAM and reset worker state if generation gets stuck.
+      </p>
+      <button type="button" class="ghost-btn" id="btnSystemReset"
+        style="width:100%; border-color:#573b3b; color:#ffcfcf;">Reset Server VRAM</button>
+      <div id="reset-status" class="muted" style="margin-top:6px;"></div>
     </div>
   </div>
 
@@ -65,7 +79,17 @@
     <h2>Projects</h2>
     <div class="table-wrap">
       <table class="projects">
-        <thead><tr><th>Project</th><th>Audio</th><th>Lyrics.txt</th><th>Aligned.srt</th><th>Edited.srt</th><th>Preview</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Audio</th>
+            <th>Lyrics.txt</th>
+            <th>Aligned.srt</th>
+            <th>Edited.srt</th>
+            <th>Preview</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
           {% for p in projects %}
           <tr>
@@ -77,7 +101,8 @@
             <td data-label="Preview">{{ "✅" if p.preview_mp4 else "-" }}</td>
             <td data-label="Actions">
               <button type="button" class="btn btnPasteLyrics" data-slug="{{p.slug}}">Paste</button>
-              <button type="button" class="ghost-btn btnArchiveProject" data-slug="{{p.slug}}" style="margin-left:6px;">Archive</button>
+              <button type="button" class="ghost-btn btnArchiveProject" data-slug="{{p.slug}}"
+                style="margin-left:6px;">Archive</button>
             </td>
           </tr>
           {% endfor %}
@@ -90,9 +115,16 @@
       <h3>Archives</h3>
       <div class="table-wrap">
         <table class="projects" id="archives-table">
-          <thead><tr><th>Archive</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Archive</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody id="archives-body">
-            <tr><td colspan="2" class="muted">Loading archives...</td></tr>
+            <tr>
+              <td colspan="2" class="muted">Loading archives...</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -109,13 +141,17 @@
   </header>
   <div class="drawer-body">
     <ol>
-      <li><strong>Create a project:</strong> upload audio + lyrics (TXT) via the dashboard form - everything posts to <code>/api/projects</code> and optional aligned SRT speeds up renders.</li>
+      <li><strong>Create a project:</strong> upload audio + lyrics (TXT) via the dashboard form - everything posts to
+        <code>/api/projects</code> and optional aligned SRT speeds up renders.</li>
       <li><strong>Edit timing:</strong> open a project to tweak subtitles, paste lyrics, or adjust fonts.</li>
       <li><strong>Render:</strong> configure styles/effects, then align + render from each project page.</li>
       <li><strong>Custom fonts:</strong> upload TTF/OTF files to personalize your subtitles.</li>
       <li><strong>Paste lyrics:</strong> use the Paste button in the table for quick updates.</li>
-      <li><strong>Generate art:</strong> inside each project there's an AI Image Generator that queues Stable Diffusion jobs and drops the PNGs into its images folder.</li>
-      <li><strong>Using custom fonts:</strong> download a .ttf or .otf (e.g., from <a href="https://www.dafont.com" target="_blank" rel="noopener">dafont.com</a>), then upload it in the “Add Custom Fonts” card so it appears in the project font picker.</li>
+      <li><strong>Generate art:</strong> inside each project there's an AI Image Generator that queues Stable Diffusion
+        jobs and drops the PNGs into its images folder.</li>
+      <li><strong>Using custom fonts:</strong> download a .ttf or .otf (e.g., from <a href="https://www.dafont.com"
+          target="_blank" rel="noopener">dafont.com</a>), then upload it in the “Add Custom Fonts” card so it appears in
+        the project font picker.</li>
     </ol>
   </div>
 </aside>
@@ -123,378 +159,506 @@
 {% include '_paste_modal.html' %}
 
 <style>
-.dashboard-grid {
-  display:grid;
-  grid-template-columns:3fr 4fr;
-  gap:20px;
-  align-items:start;
-}
-.card-section {
-  background:rgba(0,0,0,.15);
-  border:1px solid #1f1f1f;
-  border-radius:12px;
-  padding:16px;
-}
-.panel-head {
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  flex-wrap:wrap;
-  gap:10px;
-}
-.stacked-form {
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-.stacked-form label {
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  font-size:.95em;
-}
-.stacked-form input {
-  background:#050505;
-  border:1px solid #2a2a2a;
-  border-radius:8px;
-  padding:6px 10px;
-  color:#fff;
-}
-.stacked-form button {
-  margin-top:4px;
-}
-.card-subpanel {
-  margin-top:18px;
-  border-top:1px solid #2a2a2a;
-  padding-top:14px;
-}
-.font-list {
-  margin:10px 0 0;
-  padding-left:18px;
-  color:#cdd3e1;
-}
-.storage-actions { display:flex; flex-direction:column; gap:10px; }
-.storage-row { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
-.storage-info { max-width:100%; }
-.storage-label { font-weight:700; }
-.storage-row code {
-  background:#0a0d16;
-  border:1px solid #1f2434;
-  border-radius:6px;
-  padding:3px 6px;
-  color:#dbe4ff;
-  word-break:break-all;
-}
-.table-wrap {
-  overflow-x:auto;
-}
-.projects {
-  width:100%;
-  min-width:620px;
-  border-collapse:collapse;
-}
-.projects th,.projects td {
-  border-bottom:1px solid #2a2a2a;
-  padding:8px;
-  text-align:left;
-}
-.projects td[data-label]::before {
-  content:attr(data-label);
-  display:none;
-  font-weight:600;
-  margin-right:6px;
-}
-.muted { opacity:.75; }
-.ghost-btn { background:#1b1f2c; border:1px solid #343b57; color:#e1e6ff; border-radius:8px; padding:6px 12px; cursor:pointer; }
-.ghost-btn.small { padding:4px 8px; font-size:1.3em; line-height:1; }
-.drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.6); opacity:0; pointer-events:none; transition:opacity .2s ease; z-index:90; }
-.drawer-backdrop.active { opacity:1; pointer-events:auto; }
-.drawer { position:fixed; right:0; top:0; width:320px; max-width:90vw; height:100vh; background:#0f1320; border-left:1px solid #232634; box-shadow:-8px 0 16px rgba(0,0,0,.45); transform:translateX(100%); transition:transform .28s ease; z-index:99; display:flex; flex-direction:column; padding:18px; gap:12px; }
-.drawer.open { transform:translateX(0); }
-.drawer header { display:flex; justify-content:space-between; align-items:center; }
-.drawer-body { flex:1; overflow:auto; }
-.drawer-body ol { padding-left:18px; display:flex; flex-direction:column; gap:10px; }
-@media (max-width: 1024px) {
-  .dashboard-grid { grid-template-columns:1fr; }
-  .projects { min-width:auto; }
-}
-@media (max-width: 640px) {
-  main { padding:10px; }
-  .panel { padding:12px; }
-  .projects thead { display:none; }
-  .projects tr { display:flex; flex-direction:column; border:1px solid #2a2a2a; border-radius:10px; margin-bottom:12px; padding:10px; }
-.projects td { border-bottom:none; padding:4px 0; }
-.projects td[data-label]::before { display:inline-block; color:#8f95ad; }
-}
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 3fr 4fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .card-section {
+    background: rgba(0, 0, 0, .15);
+    border: 1px solid #1f1f1f;
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .stacked-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stacked-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: .95em;
+  }
+
+  .stacked-form input {
+    background: #050505;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: #fff;
+  }
+
+  .stacked-form button {
+    margin-top: 4px;
+  }
+
+  .card-subpanel {
+    margin-top: 18px;
+    border-top: 1px solid #2a2a2a;
+    padding-top: 14px;
+  }
+
+  .font-list {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    color: #cdd3e1;
+  }
+
+  .storage-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .storage-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .storage-info {
+    max-width: 100%;
+  }
+
+  .storage-label {
+    font-weight: 700;
+  }
+
+  .storage-row code {
+    background: #0a0d16;
+    border: 1px solid #1f2434;
+    border-radius: 6px;
+    padding: 3px 6px;
+    color: #dbe4ff;
+    word-break: break-all;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .projects {
+    width: 100%;
+    min-width: 620px;
+    border-collapse: collapse;
+  }
+
+  .projects th,
+  .projects td {
+    border-bottom: 1px solid #2a2a2a;
+    padding: 8px;
+    text-align: left;
+  }
+
+  .projects td[data-label]::before {
+    content: attr(data-label);
+    display: none;
+    font-weight: 600;
+    margin-right: 6px;
+  }
+
+  .muted {
+    opacity: .75;
+  }
+
+  .ghost-btn {
+    background: #1b1f2c;
+    border: 1px solid #343b57;
+    color: #e1e6ff;
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+
+  .ghost-btn.small {
+    padding: 4px 8px;
+    font-size: 1.3em;
+    line-height: 1;
+  }
+
+  .drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+    z-index: 90;
+  }
+
+  .drawer-backdrop.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .drawer {
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 320px;
+    max-width: 90vw;
+    height: 100vh;
+    background: #0f1320;
+    border-left: 1px solid #232634;
+    box-shadow: -8px 0 16px rgba(0, 0, 0, .45);
+    transform: translateX(100%);
+    transition: transform .28s ease;
+    z-index: 99;
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .drawer.open {
+    transform: translateX(0);
+  }
+
+  .drawer header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .drawer-body {
+    flex: 1;
+    overflow: auto;
+  }
+
+  .drawer-body ol {
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  @media (max-width: 1024px) {
+    .dashboard-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .projects {
+      min-width: auto;
+    }
+  }
+
+  @media (max-width: 640px) {
+    main {
+      padding: 10px;
+    }
+
+    .panel {
+      padding: 12px;
+    }
+
+    .projects thead {
+      display: none;
+    }
+
+    .projects tr {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      padding: 10px;
+    }
+
+    .projects td {
+      border-bottom: none;
+      padding: 4px 0;
+    }
+
+    .projects td[data-label]::before {
+      display: inline-block;
+      color: #8f95ad;
+    }
+  }
 </style>
 
 <script>
-(function() {
-  const projectsBtn = document.getElementById('btnPickProjects');
-  const fontsBtn = document.getElementById('btnPickFonts');
-  const projectsDisplay = document.getElementById('projects-path-display');
-  const fontsDisplay = document.getElementById('fonts-path-display');
-  const statusEl = document.getElementById('storage-status');
-  const projectsInput = document.getElementById('projects-folder-input');
-  const fontsInput = document.getElementById('fonts-folder-input');
+  (function () {
+    const projectsBtn = document.getElementById('btnPickProjects');
+    const fontsBtn = document.getElementById('btnPickFonts');
+    const projectsDisplay = document.getElementById('projects-path-display');
+    const fontsDisplay = document.getElementById('fonts-path-display');
+    const statusEl = document.getElementById('storage-status');
+    const projectsInput = document.getElementById('projects-folder-input');
+    const fontsInput = document.getElementById('fonts-folder-input');
 
-  function setStatus(msg, isError) {
-    if (!statusEl) return;
-    statusEl.textContent = msg || '';
-    statusEl.style.color = isError ? '#ff8f8f' : '#9cd7ff';
-  }
-
-  function extractPathFromInput(inputEl) {
-    if (!inputEl || !inputEl.files || !inputEl.files.length) return null;
-    const f = inputEl.files[0];
-    if (f.path) {
-      const raw = String(f.path);
-      return raw.replace(/[/\\][^/\\]+$/, "");
+    function setStatus(msg, isError) {
+      if (!statusEl) return;
+      statusEl.textContent = msg || '';
+      statusEl.style.color = isError ? '#ff8f8f' : '#9cd7ff';
     }
-    if (f.webkitRelativePath) {
-      const parts = String(f.webkitRelativePath).split(/[/\\]/);
-      const folderName = parts.length ? parts[0] : "";
-      const manual = window.prompt(
-        `Enter the full path for the "${folderName || 'selected'}" folder:`,
-        folderName
-      );
-      return manual && manual.trim() ? manual.trim() : null;
-    }
-    return null;
-  }
 
-  async function saveStoragePath(kind, path) {
-    if (!path) return;
-    setStatus(`Saving ${kind} folder...`, false);
-    try {
-      const res = await fetch('/api/storage_paths', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, path })
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.detail || `HTTP ${res.status}`);
+    function extractPathFromInput(inputEl) {
+      if (!inputEl || !inputEl.files || !inputEl.files.length) return null;
+      const f = inputEl.files[0];
+      if (f.path) {
+        const raw = String(f.path);
+        return raw.replace(/[/\\][^/\\]+$/, "");
       }
-      if (kind === 'projects' && projectsDisplay) projectsDisplay.textContent = path;
-      if (kind === 'fonts' && fontsDisplay) fontsDisplay.textContent = path;
-      setStatus(`Saved to ${data.env_file || '.env'}. Restart to apply.`, false);
-    } catch (err) {
-      setStatus(`Error: ${err?.message || err}`, true);
+      if (f.webkitRelativePath) {
+        const parts = String(f.webkitRelativePath).split(/[/\\]/);
+        const folderName = parts.length ? parts[0] : "";
+        const manual = window.prompt(
+          `Enter the full path for the "${folderName || 'selected'}" folder:`,
+          folderName
+        );
+        return manual && manual.trim() ? manual.trim() : null;
+      }
+      return null;
     }
-  }
 
-  async function openFolder(kind, inputEl) {
-    if (window.showDirectoryPicker) {
+    async function saveStoragePath(kind, path) {
+      if (!path) return;
+      setStatus(`Saving ${kind} folder...`, false);
       try {
-        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        if (handle) {
-          const guess = handle.name || '';
-          const manual = window.prompt(
-            `Enter the full path for the selected ${kind} folder:`,
-            guess
-          );
-          if (manual && manual.trim()) {
-            await saveStoragePath(kind, manual.trim());
-            return;
-          }
+        const res = await fetch('/api/storage_paths', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind, path })
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.detail || `HTTP ${res.status}`);
         }
+        if (kind === 'projects' && projectsDisplay) projectsDisplay.textContent = path;
+        if (kind === 'fonts' && fontsDisplay) fontsDisplay.textContent = path;
+        setStatus(`Saved to ${data.env_file || '.env'}. Restart to apply.`, false);
       } catch (err) {
-        // fall through to file input
+        setStatus(`Error: ${err?.message || err}`, true);
       }
     }
 
-    if (inputEl) {
-      inputEl.value = "";
-      inputEl.onchange = async () => {
-        const chosen = extractPathFromInput(inputEl);
-        if (chosen) {
-          await saveStoragePath(kind, chosen);
+    async function openFolder(kind, inputEl) {
+      if (window.showDirectoryPicker) {
+        try {
+          const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+          if (handle) {
+            const guess = handle.name || '';
+            const manual = window.prompt(
+              `Enter the full path for the selected ${kind} folder:`,
+              guess
+            );
+            if (manual && manual.trim()) {
+              await saveStoragePath(kind, manual.trim());
+              return;
+            }
+          }
+        } catch (err) {
+          // fall through to file input
         }
-      };
-      inputEl.click();
-      return;
+      }
+
+      if (inputEl) {
+        inputEl.value = "";
+        inputEl.onchange = async () => {
+          const chosen = extractPathFromInput(inputEl);
+          if (chosen) {
+            await saveStoragePath(kind, chosen);
+          }
+        };
+        inputEl.click();
+        return;
+      }
+
+      const manual = window.prompt(`Enter the full path for the ${kind} folder:`, "");
+      if (manual && manual.trim()) {
+        await saveStoragePath(kind, manual.trim());
+      }
     }
 
-    const manual = window.prompt(`Enter the full path for the ${kind} folder:`, "");
-    if (manual && manual.trim()) {
-      await saveStoragePath(kind, manual.trim());
-    }
-  }
-
-  projectsBtn?.addEventListener('click', () => openFolder('projects', projectsInput));
-  fontsBtn?.addEventListener('click', () => openFolder('fonts', fontsInput));
-})();
+    projectsBtn?.addEventListener('click', () => openFolder('projects', projectsInput));
+    fontsBtn?.addEventListener('click', () => openFolder('fonts', fontsInput));
+  })();
 </script>
 
 <script>
-(function() {
-  const statusEl = document.getElementById('archive-status');
-  const buttons = Array.from(document.querySelectorAll('.btnArchiveProject[data-slug]'));
-  const archivesBody = document.getElementById('archives-body');
-  const archivesStatus = document.getElementById('archives-status');
+  (function () {
+    const statusEl = document.getElementById('archive-status');
+    const buttons = Array.from(document.querySelectorAll('.btnArchiveProject[data-slug]'));
+    const archivesBody = document.getElementById('archives-body');
+    const archivesStatus = document.getElementById('archives-status');
 
-  function setArchiveStatus(message, isError) {
-    if (!statusEl) return;
-    statusEl.textContent = message || '';
-    statusEl.style.color = isError ? '#ff8f8f' : '#9cd7ff';
-  }
-
-  function setArchivesStatus(message, isError) {
-    if (!archivesStatus) return;
-    archivesStatus.textContent = message || '';
-    archivesStatus.style.color = isError ? '#ff8f8f' : '#9cd7ff';
-  }
-
-  async function archiveProject(slug, btn) {
-    if (!slug) return;
-    if (!window.confirm(`Archive project "${slug}"? This zips it and removes it from the list.`)) {
-      return;
+    function setArchiveStatus(message, isError) {
+      if (!statusEl) return;
+      statusEl.textContent = message || '';
+      statusEl.style.color = isError ? '#ff8f8f' : '#9cd7ff';
     }
-    const row = btn.closest('tr');
-    btn.disabled = true;
-    setArchiveStatus(`Archiving ${slug}...`, false);
-    try {
-      const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/archive`, { method: 'POST' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.detail || `HTTP ${res.status}`);
-      }
-      if (row) {
-        row.remove();
-      }
-      if (data.archive_url && statusEl) {
-        statusEl.textContent = `Archived ${slug}. `;
-        statusEl.style.color = '#9cd7ff';
-        const link = document.createElement('a');
-        link.href = data.archive_url;
-        link.textContent = 'Download archive';
-        link.target = '_blank';
-        link.rel = 'noopener';
-        statusEl.appendChild(link);
-      } else {
-        setArchiveStatus(`Archived ${slug}.`, false);
-      }
-    } catch (err) {
-      setArchiveStatus(err?.message || 'Archive failed.', true);
-      btn.disabled = false;
+
+    function setArchivesStatus(message, isError) {
+      if (!archivesStatus) return;
+      archivesStatus.textContent = message || '';
+      archivesStatus.style.color = isError ? '#ff8f8f' : '#9cd7ff';
     }
-  }
 
-  buttons.forEach((btn) => {
-    btn.addEventListener('click', () => archiveProject(btn.dataset.slug, btn));
-  });
-
-  async function loadArchives() {
-    if (!archivesBody) return;
-    archivesBody.innerHTML = '<tr><td colspan="2" class="muted">Loading archives...</td></tr>';
-    try {
-      const res = await fetch('/api/archives');
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data) {
-        throw new Error(data?.detail || `HTTP ${res.status}`);
-      }
-      const list = Array.isArray(data.archives) ? data.archives : [];
-      archivesBody.innerHTML = '';
-      if (!list.length) {
-        archivesBody.innerHTML = '<tr><td colspan="2" class="muted">No archives found.</td></tr>';
+    async function archiveProject(slug, btn) {
+      if (!slug) return;
+      if (!window.confirm(`Archive project "${slug}"? This zips it and removes it from the list.`)) {
         return;
       }
-      list.forEach((name) => {
-        const tr = document.createElement('tr');
-        const tdName = document.createElement('td');
-        tdName.textContent = name;
-        const tdActions = document.createElement('td');
-        tdActions.dataset.label = 'Actions';
-        const dl = document.createElement('a');
-        dl.href = `/api/archives/${encodeURIComponent(name)}`;
-        dl.textContent = 'Download';
-        dl.target = '_blank';
-        dl.rel = 'noopener';
-        dl.className = 'btn';
-        dl.style.marginRight = '6px';
-
-        const restoreBtn = document.createElement('button');
-        restoreBtn.type = 'button';
-        restoreBtn.className = 'btn';
-        restoreBtn.textContent = 'Restore';
-        restoreBtn.style.marginRight = '6px';
-        restoreBtn.addEventListener('click', () => restoreArchive(name, tr, restoreBtn));
-
-        const delBtn = document.createElement('button');
-        delBtn.type = 'button';
-        delBtn.className = 'btn';
-        delBtn.textContent = 'Delete';
-        delBtn.style.marginLeft = '6px';
-        delBtn.addEventListener('click', () => deleteArchive(name, tr, delBtn));
-
-        tdActions.appendChild(dl);
-        tdActions.appendChild(restoreBtn);
-        tdActions.appendChild(delBtn);
-        tr.appendChild(tdName);
-        tr.appendChild(tdActions);
-        archivesBody.appendChild(tr);
-      });
-    } catch (err) {
-      setArchivesStatus(err?.message || 'Failed to load archives.', true);
+      const row = btn.closest('tr');
+      btn.disabled = true;
+      setArchiveStatus(`Archiving ${slug}...`, false);
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(slug)}/archive`, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.detail || `HTTP ${res.status}`);
+        }
+        if (row) {
+          row.remove();
+        }
+        if (data.archive_url && statusEl) {
+          statusEl.textContent = `Archived ${slug}. `;
+          statusEl.style.color = '#9cd7ff';
+          const link = document.createElement('a');
+          link.href = data.archive_url;
+          link.textContent = 'Download archive';
+          link.target = '_blank';
+          link.rel = 'noopener';
+          statusEl.appendChild(link);
+        } else {
+          setArchiveStatus(`Archived ${slug}.`, false);
+        }
+      } catch (err) {
+        setArchiveStatus(err?.message || 'Archive failed.', true);
+        btn.disabled = false;
+      }
     }
-  }
 
-  async function restoreArchive(name, row, btn) {
-    if (!name) return;
-    if (!window.confirm(`Restore archive "${name}" back into Projects?`)) return;
-    btn.disabled = true;
-    setArchivesStatus(`Restoring ${name}...`, false);
-    try {
-      const res = await fetch(`/api/archives/${encodeURIComponent(name)}/restore`, { method: 'POST' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.detail || `HTTP ${res.status}`);
+    buttons.forEach((btn) => {
+      btn.addEventListener('click', () => archiveProject(btn.dataset.slug, btn));
+    });
+
+    async function loadArchives() {
+      if (!archivesBody) return;
+      archivesBody.innerHTML = '<tr><td colspan="2" class="muted">Loading archives...</td></tr>';
+      try {
+        const res = await fetch('/api/archives');
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+          throw new Error(data?.detail || `HTTP ${res.status}`);
+        }
+        const list = Array.isArray(data.archives) ? data.archives : [];
+        archivesBody.innerHTML = '';
+        if (!list.length) {
+          archivesBody.innerHTML = '<tr><td colspan="2" class="muted">No archives found.</td></tr>';
+          return;
+        }
+        list.forEach((name) => {
+          const tr = document.createElement('tr');
+          const tdName = document.createElement('td');
+          tdName.textContent = name;
+          const tdActions = document.createElement('td');
+          tdActions.dataset.label = 'Actions';
+          const dl = document.createElement('a');
+          dl.href = `/api/archives/${encodeURIComponent(name)}`;
+          dl.textContent = 'Download';
+          dl.target = '_blank';
+          dl.rel = 'noopener';
+          dl.className = 'btn';
+          dl.style.marginRight = '6px';
+
+          const restoreBtn = document.createElement('button');
+          restoreBtn.type = 'button';
+          restoreBtn.className = 'btn';
+          restoreBtn.textContent = 'Restore';
+          restoreBtn.style.marginRight = '6px';
+          restoreBtn.addEventListener('click', () => restoreArchive(name, tr, restoreBtn));
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.className = 'btn';
+          delBtn.textContent = 'Delete';
+          delBtn.style.marginLeft = '6px';
+          delBtn.addEventListener('click', () => deleteArchive(name, tr, delBtn));
+
+          tdActions.appendChild(dl);
+          tdActions.appendChild(restoreBtn);
+          tdActions.appendChild(delBtn);
+          tr.appendChild(tdName);
+          tr.appendChild(tdActions);
+          archivesBody.appendChild(tr);
+        });
+      } catch (err) {
+        setArchivesStatus(err?.message || 'Failed to load archives.', true);
       }
-      if (row) {
-        row.remove();
-      }
-      setArchivesStatus(`Restored ${data.slug || name}.`, false);
-      // Optionally refresh to show new project in list without full reload
-      // location.reload();
-    } catch (err) {
-      setArchivesStatus(err?.message || 'Restore failed.', true);
-      btn.disabled = false;
     }
-  }
 
-  async function deleteArchive(name, row, btn) {
-    if (!name) return;
-    if (!window.confirm(`Delete archive "${name}"? This cannot be undone.`)) return;
-    btn.disabled = true;
-    setArchivesStatus(`Deleting ${name}...`, false);
-    try {
-      const res = await fetch(`/api/archives/${encodeURIComponent(name)}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.detail || `HTTP ${res.status}`);
+    async function restoreArchive(name, row, btn) {
+      if (!name) return;
+      if (!window.confirm(`Restore archive "${name}" back into Projects?`)) return;
+      btn.disabled = true;
+      setArchivesStatus(`Restoring ${name}...`, false);
+      try {
+        const res = await fetch(`/api/archives/${encodeURIComponent(name)}/restore`, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.detail || `HTTP ${res.status}`);
+        }
+        if (row) {
+          row.remove();
+        }
+        setArchivesStatus(`Restored ${data.slug || name}.`, false);
+        // Optionally refresh to show new project in list without full reload
+        // location.reload();
+      } catch (err) {
+        setArchivesStatus(err?.message || 'Restore failed.', true);
+        btn.disabled = false;
       }
-      if (row) row.remove();
-      setArchivesStatus(`Deleted ${name}.`, false);
-      if (!archivesBody.children.length) {
-        archivesBody.innerHTML = '<tr><td colspan="2" class="muted">No archives found.</td></tr>';
-      }
-    } catch (err) {
-      setArchivesStatus(err?.message || 'Delete failed.', true);
-      btn.disabled = false;
     }
-  }
 
-  loadArchives();
-})();
+    async function deleteArchive(name, row, btn) {
+      if (!name) return;
+      if (!window.confirm(`Delete archive "${name}"? This cannot be undone.`)) return;
+      btn.disabled = true;
+      setArchivesStatus(`Deleting ${name}...`, false);
+      try {
+        const res = await fetch(`/api/archives/${encodeURIComponent(name)}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.detail || `HTTP ${res.status}`);
+        }
+        if (row) row.remove();
+        setArchivesStatus(`Deleted ${name}.`, false);
+        if (!archivesBody.children.length) {
+          archivesBody.innerHTML = '<tr><td colspan="2" class="muted">No archives found.</td></tr>';
+        }
+      } catch (err) {
+        setArchivesStatus(err?.message || 'Delete failed.', true);
+        btn.disabled = false;
+      }
+    }
+
+    loadArchives();
+  })();
 </script>
 
 <script>
   if (typeof window.post !== "function") {
-    window.post = async function(url, data) {
+    window.post = async function (url, data) {
       const res = await fetch(url, {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
+        headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify(data || {})
       });
@@ -509,54 +673,84 @@
 <script src="/static/paste-lyrics.js?v=1"></script>
 
 <script>
-async function refreshFonts() {
-  const ul = document.getElementById("font-list");
-  const res = await fetch("/api/fonts");
-  const data = await res.json();
-  ul.innerHTML = "";
-  (data.fonts || []).forEach(f => {
-    const li = document.createElement("li");
-    li.textContent = f;
-    ul.appendChild(li);
-  });
-}
-
-document.getElementById("font-upload-btn").addEventListener("click", async () => {
-  const input = document.getElementById("font-file");
-  const status = document.getElementById("font-upload-status");
-  if (!input.files.length) {
-    status.textContent = "Pick a file first.";
-    return;
-  }
-  const fd = new FormData();
-  fd.append("file", input.files[0]);
-  status.textContent = "Uploading.";
-  try {
-    const res = await fetch("/api/fonts/upload", { method: "POST", body: fd });
+  async function refreshFonts() {
+    const ul = document.getElementById("font-list");
+    const res = await fetch("/api/fonts");
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
-    status.textContent = "Uploaded!";
-    input.value = "";
-    refreshFonts();
-  } catch (err) {
-    status.textContent = "Error: " + err.message;
+    ul.innerHTML = "";
+    (data.fonts || []).forEach(f => {
+      const li = document.createElement("li");
+      li.textContent = f;
+      ul.appendChild(li);
+    });
   }
-});
 
-document.addEventListener('DOMContentLoaded', () => {
-  refreshFonts();
-  const drawer = document.getElementById('helpDrawer');
-  const backdrop = document.getElementById('helpBackdrop');
-  const toggle = (open) => {
-    const shouldOpen = typeof open === "boolean" ? open : !drawer.classList.contains('open');
-    drawer.classList.toggle('open', shouldOpen);
-    backdrop.classList.toggle('active', shouldOpen);
-    drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
-  };
-  document.getElementById('btnHelp')?.addEventListener('click', () => toggle(true));
-  document.getElementById('btnCloseHelp')?.addEventListener('click', () => toggle(false));
-  backdrop.addEventListener('click', () => toggle(false));
-});
+  document.getElementById("font-upload-btn").addEventListener("click", async () => {
+    const input = document.getElementById("font-file");
+    const status = document.getElementById("font-upload-status");
+    if (!input.files.length) {
+      status.textContent = "Pick a file first.";
+      return;
+    }
+    const fd = new FormData();
+    fd.append("file", input.files[0]);
+    status.textContent = "Uploading.";
+    try {
+      const res = await fetch("/api/fonts/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || `HTTP ${res.status}`);
+      status.textContent = "Uploaded!";
+      input.value = "";
+      refreshFonts();
+    } catch (err) {
+      status.textContent = "Error: " + err.message;
+    }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    refreshFonts();
+    const drawer = document.getElementById('helpDrawer');
+    const backdrop = document.getElementById('helpBackdrop');
+    const toggle = (open) => {
+      const shouldOpen = typeof open === "boolean" ? open : !drawer.classList.contains('open');
+      drawer.classList.toggle('open', shouldOpen);
+      backdrop.classList.toggle('active', shouldOpen);
+      drawer.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+    };
+    document.getElementById('btnHelp')?.addEventListener('click', () => toggle(true));
+    document.getElementById('btnCloseHelp')?.addEventListener('click', () => toggle(false));
+    backdrop.addEventListener('click', () => toggle(false));
+  });
+</script>
+
+<script>
+  document.getElementById("btnSystemReset").addEventListener("click", async function () {
+    if (!confirm("Are you sure you want to force-reset the server worker? This will clear VRAM and cancel running jobs.")) {
+      return;
+    }
+    const btn = this;
+    const status = document.getElementById("reset-status");
+    btn.disabled = true;
+    btn.textContent = "Resetting...";
+    status.textContent = "Sending reset command...";
+
+    try {
+      const res = await fetch("/api/system/reset", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        status.textContent = `Success! Cleared ${data.details.cleared_jobs} jobs, unloaded ${data.details.unloaded_models.length} models.`;
+        status.style.color = "#9cd7ff";
+      } else {
+        throw new Error("Reset failed");
+      }
+    } catch (e) {
+      status.textContent = "Error during reset: " + e;
+      status.style.color = "#ff8f8f";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Reset Server VRAM";
+    }
+  });
 </script>
 
 {% endblock %}
