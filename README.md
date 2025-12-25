@@ -4,7 +4,7 @@
  - For those running on windows I have included 2 batch files. One for running the web app and one for running the CLI. The batch files are named autorun.bat and lyricsync_gui.bat. The autorun file will start up the server on port 8787. Lyricsync_gui is how I first ran and tested the program and may no longer work as a large part of the program has been modified since it was last updated. It is a commandline ran menu that will allow you to run the basics of the program without having to use the web app, excluding the image generation.
 # Lyricsync
 
-**Lyricsync** is a powerful tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
+**Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
