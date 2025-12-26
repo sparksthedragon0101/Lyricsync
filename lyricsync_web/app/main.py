@@ -1163,20 +1163,100 @@ def api_get_timing(slug: str):
             if aligned_count and len(segments) < aligned_count:
                 ensure_project_from_srt(aligned, json_path, p.audio)
                 data = load_project(json_path)
-        return data
-    if p.aligned_srt.exists():
+        # Fall through to merge words
+    elif p.aligned_srt.exists():
         ensure_project_from_srt(p.aligned_srt, json_path, p.audio)
-        return load_project(json_path)
-    data = {"version": 1, "audio_path": str(p.audio), "title": p.dir.name, "fps": 30, "level": "line", "segments": []}
-    save_project(json_path, data)
+        data = load_project(json_path)
+    else:
+        data = {"version": 1, "audio_path": str(p.audio), "title": p.dir.name, "fps": 30, "level": "line", "segments": []}
+        save_project(json_path, data)
+
+    # Merge words.json if available
+    words_path = p.dir / "words.json"
+    if words_path.exists():
+        try:
+            import json
+            words_data = json.loads(words_path.read_text(encoding="utf-8"))
+            if isinstance(words_data, list):
+                # Efficiently assign words to segments based on overlap
+                # Sort words by start time
+                words_data.sort(key=lambda w: w.get("start", 0))
+                
+                w_idx = 0
+                n_words = len(words_data)
+                
+                for seg in data.get("segments", []):
+                    seg_start = seg.get("start", 0)
+                    seg_end = seg.get("end", 0)
+                    seg_words = []
+                    
+                    # Advance w_idx to start of segment (with 1.0s buffer to be safe)
+                    while w_idx < n_words and words_data[w_idx].get("end", 0) < seg_start - 1.0:
+                        w_idx += 1
+                        
+                    # Collect overlapping words
+                    temp_idx = w_idx
+                    while temp_idx < n_words:
+                        w = words_data[temp_idx]
+                        if w.get("start", 0) > seg_end + 1.0:
+                            break
+                        
+                        # Overlap check
+                        overlap_start = max(seg_start, w.get("start", 0))
+                        overlap_end = min(seg_end, w.get("end", 0))
+                        
+                        if overlap_end > overlap_start:
+                             # It physically overlaps. 
+                             # We could check if > 50% of the word is inside, but simplest is any overlap?
+                             # Or use the center point. 
+                             mid = (w.get("start",0) + w.get("end",0)) / 2
+                             if seg_start <= mid <= seg_end:
+                                 seg_words.append(w)
+                             elif overlap_end - overlap_start > 0.1: # Significant overlap
+                                 seg_words.append(w)
+
+                        temp_idx += 1
+                    
+                    if seg_words:
+                        seg["words"] = seg_words
+        except Exception as e:
+            print(f"Error loading words.json: {e}")
+
     return data
+
 
 @app.post("/api/projects/{slug}/timing")
 async def api_save_timing(slug: str, request: Request):
     p = projects.get(slug)
     data = await request.json()
+    
+    # Extract words to save to words.json
+    all_words = []
+    if isinstance(data, dict) and "segments" in data:
+        for seg in data["segments"]:
+            if "words" in seg and isinstance(seg["words"], list):
+                # We trust the frontend to provide valid word objects
+                all_words.extend(seg["words"])
+                # Remove words from timing.json to avoid duplication? 
+                # Or keep them for safety? 
+                # Let's remove them to keep timing.json clean and rely on words.json as SSOT for words.
+                # BUT: srt_json.save_project just dumps the dict.
+                # If we modify 'seg' here, we modify 'data'.
+                del seg["words"]
+                
+    # Sort words by time
+    all_words.sort(key=lambda w: w.get("start", 0))
+    
+    # Save words.json
+    words_path = p.dir / "words.json"
+    if all_words:
+        import json
+        words_path.write_text(json.dumps(all_words, indent=2), encoding="utf-8")
+    
+    # Save timing.json (segments only)
     json_path = p.dir / "timing.json"
     save_project(json_path, data)
+    
     try:
         export_srt(data, p.aligned_srt)
         export_srt(data, p.dir / "edited.srt")
@@ -1331,6 +1411,8 @@ async def api_align(
     ]
     if enable_word_highlight:
         args.append("--enable-word-highlight")
+        # Ensure we generate the cache during alignment so the editor can use it
+        args.extend(["--words-cache", str(p.dir / "words.json")])
     full_cmd = [sys.executable, str(LYRICSYNC_PATH), *args]
 
     # ---------- log header ----------
@@ -1423,6 +1505,7 @@ async def api_render(
     effect_zoom: float | None = None,
     effect_pan: float | None = None,
     fps: int = 30,
+    word_highlight: bool = False,
 
     ):
     font_color            = "#FFFFFF"
@@ -1444,6 +1527,7 @@ async def api_render(
                 if "title_from_mp3" not in data and "use_mp3_title" in data:
                    title_from_mp3 = use_mp3_title
                 show_end_card  = bool(data.get("show_end_card", show_end_card))
+                word_highlight = bool(data.get("word_highlight", word_highlight))
                 style          = data.get("style", style)
                 text_theme     = data.get("text_theme", text_theme)
                 font           = data.get("font", font)
@@ -1521,15 +1605,23 @@ async def api_render(
         audio_path = mp3s[0] if mp3s else max(files, key=lambda f: f.stat().st_size)
 
     # 3) Effective style (don’t auto-force credits; let UI style do that)
+    # Map 'karaoke' style to valid backend style + flag
     eff_style = style
+    if style == "karaoke":
+        eff_style = "burn-srt"
+        word_highlight = True
 
     # 4) Build base command
     title_enabled = bool(show_title or title_from_mp3 or use_mp3_title)
     title_seconds = 3.0 if title_enabled else 0.0
 
+    lyrics_arg = str(srt_path)
+    if word_highlight and p.official_txt.exists():
+        lyrics_arg = str(p.official_txt)
+
     cmd = [
         str(LYRICSYNC_PATH), "--audio", str(audio_path),
-        "--lyrics", str(srt_path),
+        "--lyrics", lyrics_arg,
         "--srt-only",
         "--out-srt", str(srt_path),
         "--burn-subs", str(srt_path),
@@ -1608,12 +1700,18 @@ async def api_render(
     # 6) Title card flags
     if title_from_mp3 or (show_title and use_mp3_title):
         cmd += ["--title-from-mp3"]
-    
+
+    if word_highlight:
+        cmd.append("--enable-word-highlight")
+        cmd.extend(["--words-cache", str(p.dir / "words.json")])
+        
     if show_end_card:
         if end_card_text is None or not str(end_card_text).strip():
             end_card_text = "Thank You for Watching"
-        cmd += ["--thanks-text", str(end_card_text)]
-        cmd += ["--thanks-seconds", str(end_card_seconds)]
+        cmd += [
+            "--thanks-text", end_card_text,
+            "--thanks-seconds", str(end_card_seconds)
+        ]
     # 7) Start job
     job_id = jobs.start(slug, "render", cmd, cwd=p.dir)
 

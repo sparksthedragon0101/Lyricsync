@@ -20,6 +20,7 @@ let currentId = null;
 let dirty = false;
 let loopSelected = false; // toggle with 'L'
 let supportsWordTiming = false;
+let editMode = 'lines'; // 'lines' | 'words'
 let keyHandler = null;
 let regionHistoryTimer = null;
 let touchEditEnabled = true;
@@ -160,13 +161,32 @@ function refreshList() {
   if (!project?.segments) return;
   const ul = $("#lines"); if (!ul) return;
   ul.innerHTML = "";
-  project.segments.forEach(seg => {
-    const li = el("li", { textContent: `${seg.id}: ${displayText(seg)}` });
-    li.dataset.id = seg.id;
-    if (seg.id === currentId) li.classList.add("active");
-    li.onclick = () => selectSeg(seg.id, true);
-    ul.append(li);
-  });
+
+  if (editMode === 'words') {
+    // WORD MODE LIST
+    let count = 0;
+    project.segments.forEach((seg, sIdx) => {
+      if (!Array.isArray(seg.words)) return;
+      seg.words.forEach((w, wIdx) => {
+        count++;
+        const wordId = `W:${seg.id}:${wIdx}`;
+        const li = el("li", { textContent: `${count}: ${w.text || "(empty)"}` });
+        li.dataset.id = wordId;
+        if (wordId === currentId) li.classList.add("active");
+        li.onclick = () => selectSeg(wordId, true);
+        ul.append(li);
+      });
+    });
+  } else {
+    // LINE MODE LIST
+    project.segments.forEach(seg => {
+      const li = el("li", { textContent: `${seg.id}: ${displayText(seg)}` });
+      li.dataset.id = seg.id;
+      if (seg.id === currentId) li.classList.add("active");
+      li.onclick = () => selectSeg(seg.id, true);
+      ul.append(li);
+    });
+  }
 }
 
 function toggleWordTools() {
@@ -234,21 +254,78 @@ function refreshWordPanel(seg) {
 }
 
 function selectSeg(id, scroll = false) {
+  // Handle Word Selection
+  if (id && id.startsWith("W:")) {
+    const parts = id.split(":");
+    const segId = parts[1];
+    const wIdx = parseInt(parts[2], 10);
+    const seg = findSeg(segId);
+
+    if (seg && seg.words && seg.words[wIdx]) {
+      currentId = id;
+      const w = seg.words[wIdx];
+
+      // Update UI for Word
+      $("#selNone")?.classList.add("hidden");
+      $("#selPanel")?.classList.remove("hidden");
+
+      // Reuse existing inputs
+      $("#selText").value = w.text;
+      $("#selStart").value = w.start.toFixed(3);
+      $("#selEnd").value = w.end.toFixed(3);
+      $("#selDur").value = (w.end - w.start).toFixed(3) + "s";
+
+      // Hide Line-specific tools
+      toggleLineTools(false);
+
+      // Highlight region
+      const r = regions.getRegions().find(x => x.id === id);
+      if (r) {
+        regions.getRegions().forEach(x => x.element.classList.remove("selected"));
+        r.element.classList.add("selected");
+        if (scroll) wavesurfer.setTime(w.start + 0.01);
+      }
+      return;
+    }
+  }
+
+  // Handle Line Selection (Legacy)
   currentId = id;
   document.querySelectorAll("#lines li").forEach(li => li.classList.toggle("active", li.dataset.id === id));
   const seg = findSeg(id); if (!seg) return;
+
   $("#selNone")?.classList.add("hidden");
   $("#selPanel")?.classList.remove("hidden");
+
+  // Show Line tools
+  toggleLineTools(true);
+
   $("#selText").value = displayText(seg);
   refreshWordPanel(seg);
   $("#selStart").value = seg.start.toFixed(3);
   $("#selEnd").value = seg.end.toFixed(3);
   $("#selDur").value = (seg.end - seg.start).toFixed(3) + "s";
+
   const r = regions.getRegions().find(r => r.id === id);
   if (r) {
     regions.getRegions().forEach(x => x.element.classList.remove("selected"));
     r.element.classList.add("selected");
     if (scroll) wavesurfer.setTime(seg.start + 0.01);
+  }
+}
+
+function toggleLineTools(show) {
+  // Hide/Show tools that don't make sense for Words (Split/Merge/Add/Delete Line)
+  const buttons = ["#split", "#merge", "#addLineAfter", "#deleteLine", "#btnCopyLines", "#btnPasteLines", ".trim-row"];
+  buttons.forEach(sel => {
+    const el = $(sel);
+    if (el) el.classList.toggle("hidden", !show);
+  });
+  // Also hide Word Tools panel if we are IN word mode (since we are editing a word directly)
+  const wordTools = $("#wordTools");
+  if (wordTools) {
+    if (!show) wordTools.classList.add("hidden");
+    else toggleWordTools(); // Restore normal state
   }
 }
 
@@ -261,18 +338,38 @@ function rebuildRegions() {
     if (r && typeof r.remove === "function") r.remove();
   }
 
-
   const segs = Array.isArray(project?.segments) ? project.segments : [];
-  for (const seg of segs) {
-    regions.addRegion({
-      id: seg.id,
-      start: Number(seg.start) || 0,
-      end: Number(seg.end) || 0,
-      content: displayText(seg) ?? "",
-      drag: true,
-      resize: true,
-      color: "rgba(122,162,247,0.12)",
+
+  if (editMode === 'words') {
+    // WORD MODE
+    segs.forEach((seg, sIdx) => {
+      if (!Array.isArray(seg.words)) return;
+      seg.words.forEach((w, wIdx) => {
+        const wordId = `W:${seg.id}:${wIdx}`;
+        regions.addRegion({
+          id: wordId,
+          start: Number(w.start),
+          end: Number(w.end),
+          content: w.text || "",
+          drag: true,
+          resize: true,
+          color: "rgba(46, 204, 113, 0.25)", // Greenish for words
+        });
+      });
     });
+  } else {
+    // LINE MODE (SRT)
+    for (const seg of segs) {
+      regions.addRegion({
+        id: seg.id,
+        start: Number(seg.start) || 0,
+        end: Number(seg.end) || 0,
+        content: displayText(seg) ?? "",
+        drag: true,
+        resize: true,
+        color: "rgba(122,162,247,0.12)",
+      });
+    }
   }
   applyRegionTouchState();
 }
@@ -886,6 +983,27 @@ async function loadProject() {
 
   // Enhanced region-updated: snap to 10ms, guard overlaps, optional ripple
   regions.on('region-updated', (reg) => {
+    // Handle Word Updates
+    if (reg.id.startsWith("W:")) {
+      const parts = reg.id.split(":");
+      const segId = parts[1];
+      const wIdx = parseInt(parts[2], 10);
+      const seg = findSeg(segId);
+      if (seg && seg.words && seg.words[wIdx]) {
+        seg.words[wIdx].start = Math.round(reg.start * 1000) / 1000;
+        seg.words[wIdx].end = Math.round(reg.end * 1000) / 1000;
+        setDirty(true);
+        // Update sidebar input if this word is selected
+        if (currentId === reg.id) {
+          $("#selStart").value = seg.words[wIdx].start.toFixed(3);
+          $("#selEnd").value = seg.words[wIdx].end.toFixed(3);
+          $("#selDur").value = (seg.words[wIdx].end - seg.words[wIdx].start).toFixed(3) + "s";
+        }
+      }
+      return;
+    }
+
+    // Handle Segment Updates (Legacy)
     const seg = findSeg(reg.id); if (!seg) return;
     const q10 = (x) => Math.max(0, Math.round(x * 100) / 100);
 
@@ -1244,6 +1362,32 @@ function wireButtonsOnce() {
     });
   });
   $("#wordList")?.addEventListener("input", handleWordInputChange);
+
+  // Wire Mode Toggle
+  $("#btnModeLines")?.addEventListener("click", () => {
+    if (editMode === 'lines') return;
+    editMode = 'lines';
+    $("#btnModeWords")?.classList.remove("active");
+    $("#btnModeLines")?.classList.add("active");
+    rebuildRegions();
+    refreshList();
+    // Reset selection to first line
+    if (project?.segments?.length) selectSeg(project.segments[0].id);
+  });
+  $("#btnModeWords")?.addEventListener("click", () => {
+    if (editMode === 'words') return;
+    editMode = 'words';
+    $("#btnModeLines")?.classList.remove("active");
+    $("#btnModeWords")?.classList.add("active");
+
+    rebuildRegions();
+    refreshList();
+    // Reset selection to first word of first line?
+    // Or just clear selection.
+    $("#selNone")?.classList.remove("hidden");
+    $("#selPanel")?.classList.add("hidden");
+    currentId = null;
+  });
 }
 
 // debounce helper (top-level if you like)

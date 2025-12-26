@@ -35,7 +35,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from difflib import SequenceMatcher
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import List, Tuple, Optional, Iterable, Set, Dict
 from fontTools.ttLib import TTFont
 from effects import build_effect_filter, choices as effect_choices
@@ -2249,6 +2249,277 @@ def build_title_ass(
         f.write("\n".join(header + [dialogue]) + "\n")
 
 
+
+def save_words_json(words: List[Word], path: str):
+    data = [asdict(w) for w in words]
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+def load_words_json(path: str) -> List[Word]:
+    if not os.path.exists(path):
+        return []
+    with open(path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return [Word(**d) for d in data]
+
+def build_karaoke_ass(
+    words: List[Word],
+    lyric_lines: List[str],
+    out_ass_path: str,
+    width=1920, height=1080,
+    font="Arial", font_size=48, outline=2, align=5, margin_v=40,
+    font_color="#FFFFFF", outline_color="#000000",
+):
+    """
+    Aligns words to lines and generates an ASS file with karaoke tags (\\k).
+    Uses Official Lyrics as the master text source and interpolates timings for missing/mismatched words.
+    """
+    # 1. Align lines
+    spans, _ = greedy_align_lines_to_words(words, lyric_lines)
+    
+    def _c(hex_str, alpha="00"):
+        s = str(hex_str).lstrip("#")
+        if len(s) == 6:
+            r, g, b = s[0:2], s[2:4], s[4:6]
+            return f"&H{alpha}{b}{g}{r}&"
+        return "&H00FFFFFF&"
+
+    primary_ass   = _c(font_color, "00")
+    secondary_ass = _c(font_color, "80")  # Dimmed for future text
+    outline_ass   = _c(outline_color, "00")
+
+    header = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        f"PlayResX: {width}",
+        f"PlayResY: {height}",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        ("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
+         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding"),
+        (f"Style: Karaoke,{font},{font_size},{primary_ass},{secondary_ass},{outline_ass},&H00000000,"
+         f"0,0,0,0,100,100,0,0,1,{max(0,min(outline,10))},0,{align},10,10,{margin_v},1"),
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+
+    events = []
+    
+    def _t(t):
+        if t < 0: t = 0
+        h = int(t // 3600); m = int((t % 3600) // 60); s = int(t % 60)
+        cs = int(round((t - int(t)) * 100))
+        return f"{h:d}:{m:02d}:{s:02d}.{cs:02d}"
+
+    for i, line_text in enumerate(lyric_lines):
+        span = spans[i]
+        
+        # Tokenize Official Line (simple split for now, preserving some punctuation logic could be better but basic is fine)
+        # We want to preserve the display text (with punctuation) but match on normalized tokens.
+        # Let's split by space to get "display words".
+        official_tokens = line_text.strip().split()
+        if not official_tokens:
+            continue
+
+        # Get the pool of transcribed words assigned to this line
+        if span.start_word is not None and span.end_word is not None:
+             tx_words = words[span.start_word : span.end_word]
+        else:
+             tx_words = []
+
+        # We need to map official_tokens -> tx_words to get timings.
+        # Use SequenceMatcher on the normalized text.
+        
+        # 1. Normalize for matching
+        norm_official = [re.sub(r"[^\w]", "", t).lower() for t in official_tokens]
+        norm_tx = [re.sub(r"[^\w]", "", w.text).lower() for w in tx_words]
+        
+        sm = SequenceMatcher(None, norm_official, norm_tx)
+        opcodes = sm.get_opcodes()
+        
+        # Resulting Timed Tokens: (text, duration_cs, is_interval)
+        # We will build a list of objects with determined durations.
+        # But we need absolute start/end to calculate interpolation.
+        
+        # Structure: list of { "text": str, "start": float, "end": float, "from_tx": bool }
+        aligned_line = []
+        
+        for tag, i1, i2, j1, j2 in opcodes:
+            if tag == 'equal':
+                # Perfect match(es)
+                for off_idx, tx_idx in zip(range(i1, i2), range(j1, j2)):
+                    w_node = tx_words[tx_idx]
+                    aligned_line.append({
+                        "text": official_tokens[off_idx], # Keep official spelling
+                        "start": w_node.start,
+                        "end": w_node.end,
+                        "from_tx": True
+                    })
+            elif tag == 'replace':
+                # Mismatch - e.g. "gonna" vs "going to", or Whisper hallucination vs missed word
+                # We have (i2-i1) official words and (j2-j1) transcribed words.
+                # We can try to distribute the time of the transcribed chunk to the official chunk.
+                # If tx chunk is empty (unlikely in replace), use neighbors.
+                if (j2 > j1):
+                    # We have some audio evidence. Use the union of their times?
+                    t_start = tx_words[j1].start
+                    t_end = tx_words[j2-1].end
+                    # Distribute evenly among official words
+                    count = i2 - i1
+                    duration = t_end - t_start
+                    step = duration / count
+                    for k in range(count):
+                        aligned_line.append({
+                            "text": official_tokens[i1+k],
+                            "start": t_start + k*step,
+                            "end": t_start + (k+1)*step,
+                            "from_tx": True # It's based on tx timing, essentially
+                        })
+                else:
+                    # Looked like replace, but tx side is empty? Should be 'delete' (handled by official side in `delete` tag = official words missing from tx?)
+                    # Wait, 'delete' in SequenceMatcher means "delete from A to get B". So A has extra words.
+                    # 'insert' means "insert into A to get B". So B has extra words (hallucinations).
+                    # 'replace': A has words, B has different words.
+                    pass 
+
+            elif tag == 'delete':
+                # A (official) has words, B (tx) does not. "Missing words".
+                # These need interpolation. Mark them for later pass.
+                for k in range(i1, i2):
+                    aligned_line.append({
+                        "text": official_tokens[k],
+                        "start": None,
+                        "end": None,
+                        "from_tx": False
+                    })
+            elif tag == 'insert':
+                # B (tx) has extra words (hallucinations or repetitions?). ignore them.
+                pass
+
+        if not aligned_line:
+            continue
+
+        # --- Interpolation Pass ---
+        # We need to fill in None start/end times.
+        # 1. Find the bounding box of known times for the line.
+        #    If NO known times (complete hallucination or silence), we might need to guess based on previous line end?
+        #    Or just assign 0 duration?
+        
+        # Helper to find next known timing
+        def find_next_known(idx, nodes):
+            for k in range(idx, len(nodes)):
+                if nodes[k]["start"] is not None:
+                    return k, nodes[k]["start"]
+            return None, None
+
+        # Find line absolute boundaries
+        line_start_time = 0.0
+        line_end_time = 0.0
+        
+        # Get first known start
+        known_indices = [k for k, x in enumerate(aligned_line) if x["start"] is not None]
+        
+        if not known_indices:
+             # Disastrously bad match? Or Instrumental line?
+             # Fallback: Estimating from previous line?
+             # For now, let's just skip generating karaoke for this line or show it static.
+             # Or assume it starts after prev line?
+             pass 
+        else:
+             # Interpolate gaps
+             # Pre-fill start for leading missing words
+             first_k = known_indices[0]
+             if first_k > 0:
+                 # Lead-in words.
+                 # Strategy: Extend backwards from first known word with arbitrary short duration (e.g. 0.3s)?
+                 # Or just stack them immediately before.
+                 ref_start = aligned_line[first_k]["start"]
+                 avg_dur = 0.3 # guess
+                 for k in range(first_k-1, -1, -1):
+                     aligned_line[k]["end"] = ref_start
+                     aligned_line[k]["start"] = max(0, ref_start - avg_dur)
+                     ref_start = aligned_line[k]["start"]
+
+             # Tail words
+             last_k = known_indices[-1]
+             if last_k < len(aligned_line) - 1:
+                  ref_end = aligned_line[last_k]["end"]
+                  avg_dur = 0.3
+                  for k in range(last_k+1, len(aligned_line)):
+                      aligned_line[k]["start"] = ref_end
+                      aligned_line[k]["end"] = ref_end + avg_dur
+                      ref_end = aligned_line[k]["end"]
+             
+             # Middle gaps
+             i = 0
+             while i < len(aligned_line):
+                 if aligned_line[i]["start"] is None:
+                     # Start of a gap
+                     # Find end of gap
+                     j = i + 1
+                     while j < len(aligned_line) and aligned_line[j]["start"] is None:
+                         j += 1
+                     
+                     # Previous known is at i-1 (guaranteed by Lead-in logic above)
+                     # Next known is at j (guaranteed by Tail logic above)
+                     t_prev_end = aligned_line[i-1]["end"]
+                     t_next_start = aligned_line[j]["start"]
+                     
+                     gap_dur = max(0.1, t_next_start - t_prev_end)
+                     count = j - i
+                     step = gap_dur / count
+                     
+                     for k in range(count):
+                         idx = i + k
+                         aligned_line[idx]["start"] = t_prev_end + (k * step)
+                         aligned_line[idx]["end"] = t_prev_end + ((k+1) * step)
+                     
+                     i = j
+                 else:
+                     i += 1
+
+        # --- Generation ---
+        # Now we have continuous timings (mostly).
+        if not known_indices and not aligned_line[0].get("start"):
+             # Total fail fallback, just use previous line end
+             pass 
+
+        if not aligned_line: continue
+        
+        final_start = aligned_line[0]["start"] or 0.0
+        final_end = aligned_line[-1]["end"] or (final_start + 2.0)
+        
+        k_text = ""
+        curr = final_start
+        
+        for item in aligned_line:
+            if item["start"] is None: item["start"] = curr # Safety
+            if item["end"] is None: item["end"] = item["start"] + 0.5
+            
+            # Gap handling (spacers)
+            gap = item["start"] - curr
+            if gap > 0.02:
+                gap_cs = int(round(gap * 100))
+                if gap_cs > 0: k_text += f"{{\\k{gap_cs}}} "
+            
+            dur = item["end"] - item["start"]
+            dur_cs = int(round(dur * 100))
+            if dur_cs < 1: dur_cs = 1
+            
+            k_text += f"{{\\k{dur_cs}}}{item['text']} "
+            curr = item["end"]
+
+        k_text = k_text.strip()
+        dialogue = f"Dialogue: 0,{_t(final_start)},{_t(final_end)},Karaoke,,0,0,0,,{k_text}"
+        events.append(dialogue)
+
+    with open(out_ass_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(header + events) + "\n")
+
+
 # ---------- Main ----------
 
 def main() -> None:
@@ -2315,6 +2586,8 @@ def main() -> None:
                     help="Duration (in seconds) to display the title card when enabled.")
     ap.add_argument("--enable-word-highlight", action="store_true",
                     help="Reserved flag for future WhisperX per-word highlight overlays.")
+    ap.add_argument("--words-cache", default=None,
+                    help="Path to JSON file to load/save word timings (caches transcription).")
 
               # ---- style selection ----
     ap.add_argument("--style", default="burn-srt", choices=["none", "still", "burn-srt", "rainbow-cycle", "credits"],
@@ -2556,10 +2829,29 @@ def main() -> None:
     title_card_text = resolve_title_for_card(getattr(args, "title_from_mp3", False), args.audio)
     title_secs = base_title_secs if (title_card_text and base_title_secs > 0.0) else 0.0
     
-    if args.srt_only:
+    words, segs = [], []
+    total_dur = _probe_duration_seconds(args.audio) 
+
+    # Determine if we can load words
+    loaded_words = False
+    if args.words_cache and os.path.exists(args.words_cache):
+        print(f"Loading cached words from {args.words_cache}...")
+        words = load_words_json(args.words_cache)
+        if words:
+            loaded_words = True
+            # Create dummy segments if needed? 
+            # Segments are mainly for fallback. If we have words, we might not need them.
+            # Or we can reconstruct them from words?
+            pass
+
+    if loaded_words:
+        print(f"    Loaded {len(words)} words.")
+    elif args.srt_only and not getattr(args, "enable_word_highlight", False):
+        # Only skip if we are NOT doing karaoke. verify?
+        # If enable_word_highlight is ON, we NEED words.
+        # If we didn't load them, we MUST transcribe.
         print("SRT-only mode: skipping transcription.")
         words, segs = [], []
-        total_dur = _probe_duration_seconds(args.audio)  # get duration for preview/credits
     else:
         print(f"Transcribing (VAD={vad_mode}).")
         words, segs, total_dur = _do_transcribe(
@@ -2571,12 +2863,26 @@ def main() -> None:
             vad_filter=vad_mode,
             show_progress=True,
         )
+        if args.words_cache:
+            print(f"Saving words to {args.words_cache}")
+            save_words_json(words, args.words_cache)
 
     print(f"    Segments: {len(segs)}  Words: {len(words)}  Duration: {total_dur:.1f}s")
 
-    # Auto-VAD retry — only when we are actually transcribing
-    if (not args.srt_only) and vad_mode == "auto" and _needs_vad_retry(words, segs, total_dur, lyric_lines):
-        print("First pass looks weak; retrying transcription with VAD=off…")
+    # Auto-VAD retry / Multi-pass for Karaoke
+    # If karaoke is enabled, we aggressively try to get the best transcription (more words).
+    should_retry = False
+    is_karaoke = getattr(args, "enable_word_highlight", False)
+    
+    if (not loaded_words) and (not args.srt_only) and vad_mode == "auto":
+        if is_karaoke:
+            should_retry = True # Always try VAD=off for karaoke to maximize chances
+        elif _needs_vad_retry(words, segs, total_dur, lyric_lines):
+            should_retry = True
+            
+    if should_retry:
+        reason = "Karaoke multi-pass" if is_karaoke else "First pass looks weak"
+        print(f"{reason}; retrying transcription with VAD=off…")
         words2, segs2, total2 = _do_transcribe(
             audio_path=asr_audio,
             model_size=args.model_size,
@@ -2586,25 +2892,41 @@ def main() -> None:
             vad_filter="off",
             show_progress=True,
         )
-        improved = (len(words2) > len(words)) or ((segs2[-1].end if segs2 else 0.0) > (segs[-1].end if segs else 0.0))
+        
+        # Selection Logic
+        if is_karaoke:
+            # For karaoke, we generally prefer more words (less gaps to interpolate).
+            # Hallucinations are filtered by alignment constraint effectively.
+            improved = len(words2) > len(words)
+        else:
+            # Standard heuristic
+            improved = (len(words2) > len(words)) or ((segs2[-1].end if segs2 else 0.0) > (segs[-1].end if segs else 0.0))
+            
         if improved:
             words, segs, total_dur = words2, segs2, total2
             print(f"    Segments: {len(segs2)}  Words: {len(words2)}  Duration: {total_dur:.1f}s")
+            if args.words_cache:
+                save_words_json(words, args.words_cache)
         else:
-            print("    Keeping first pass (retry did not improve content).")
+            print(f"    Keeping first pass (Pass 2 words: {len(words2)} vs Pass 1: {len(words)}).")
 
     # Alignment + SRT writing 
     final_srt_for_burning = None # This will be the path to the SRT used by ffmpeg
     cleanup_final_srt = False
     
-    if not args.srt_only:
+    if not args.srt_only or loaded_words:
+        # Note: If srt_only is TRUE but we loaded words, we CAN still align if we want to.
+        # But usually srt_only implies we want to use the provided SRT.
+        # However, for Karaoke, we NEED to use the words.
+        
         print("Using official lyrics…")
         print(f"    {len(lyric_lines)} lines (including blanks).")
 
         print("Aligning lyrics…")
         if args.align_mode == "segments":
             timed_lines = align_lines_to_segments(segs, lyric_lines)
-        elif args.align_mode == "words":
+        elif args.align_mode == "words" or getattr(args, "enable_word_highlight", False):
+             # Force word alignment if karaoke requested
             spans, scores = greedy_align_lines_to_words(words, lyric_lines)
             timed_lines = word_spans_to_timed_lines(words, lyric_lines, spans)
         else:
@@ -2627,9 +2949,14 @@ def main() -> None:
             for li, span in enumerate(spans[:10]):
                 print(f"L{li}: start={span.start_word} end={span.end_word} score={span.score:.2f}")
 
-        print(f"Writing SRT to {args.out_srt} …")
-        write_srt(timed_lines, args.out_srt)
-        print("    Done.")
+        # Only overwrite SRT if we are NOT in srt-only mode?
+        # If srt-only is used, we usually want to use the input SRT.
+        # But if we did alignment for Karaoke, we might want to update it?
+        # Let's respect srt_only for the OUTPUT SRT file, but generate internal timed_lines for Karaoke.
+        if not args.srt_only:
+            print(f"Writing SRT to {args.out_srt} …")
+            write_srt(timed_lines, args.out_srt)
+            print("    Done.")
         
                       # Also write a shifted copy if requested
         if getattr(args, "shift_seconds", 0.0) and abs(float(args.shift_seconds)) > 1e-6:
@@ -2650,7 +2977,25 @@ def main() -> None:
     # Default: burn the generated SRT (or the user SRT in srt-only), unless --no-burn
     burn_path = None
     if not args.no_subs: # Only if we intend to have subtitles at all
-        if args.style in ("none", "still"):
+        if getattr(args, "enable_word_highlight", False):
+             print("Generating Karaoke ASS...")
+             karaoke_ass = os.path.splitext(args.out_srt)[0] + ".karaoke.ass"
+             build_karaoke_ass(
+                 words=words,
+                 lyric_lines=lyric_lines,
+                 out_ass_path=karaoke_ass,
+                 width=target_w,
+                 height=target_h,
+                 font=font_for_ass,
+                 font_size=scaled_font_size,
+                 outline=scaled_outline,
+                 align=args.align,
+                 margin_v=scaled_margin_v,
+                 font_color=args.font_color,
+                 outline_color=args.outline_color,
+             )
+             burn_path = karaoke_ass
+        elif args.style in ("none", "still"):
             burn_path = None # Explicitly no subs for these styles
         elif args.style == "burn-srt":
             burn_path = args.burn_subs if (args.srt_only and args.burn_subs) else args.out_srt

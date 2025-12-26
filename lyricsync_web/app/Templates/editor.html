@@ -13,6 +13,11 @@
       <button id="zoomOut">-</button>
     </div>
     <div class="controls-right">
+      <div class="toggle-group">
+        <label for="modeToggle">Mode:</label>
+        <button id="btnModeLines" class="mode-btn active">Lines</button>
+        <button id="btnModeWords" class="mode-btn">Words</button>
+      </div>
       <span id="time">0.00s</span>
       <span id="dirty" class="dirty hidden">⚠ unsaved</span>
       <span id="status"></span>
@@ -203,6 +208,30 @@
     font-size: .9em;
     color: #9aa4b9;
     margin: 6px 0 10px;
+  }
+
+  .toggle-group {
+    display: inline-flex;
+    background: #0b0f1c;
+    padding: 2px;
+    border-radius: 6px;
+    border: 1px solid #1f2333;
+    margin-right: 12px;
+  }
+
+  .mode-btn {
+    background: transparent;
+    border: none;
+    color: #9aa4b9;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+  }
+
+  .mode-btn.active {
+    background: #2c5af7;
+    color: #fff;
   }
 
   .action-row {
