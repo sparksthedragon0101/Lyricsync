@@ -18,6 +18,7 @@ router = APIRouter(prefix="/api/image", tags=["image"])
 
 
 class PipelineControlRequest(BaseModel):
+    model_config = {"protected_namespaces": ()}
     model_id: str
     precision: PrecisionT = "fp16"
 

@@ -7,12 +7,9 @@ pydantic-core==2.23.4
 python-multipart==0.0.9
 Jinja2==3.1.4
 
-# Torch (CUDA 12.6 build by default; adjust index URL if targeting CPU/other CUDA)
-# NOTE: cu126 wheels exist starting at torch 2.6.x; pin accordingly
-torch==2.6.0+cu126
-torchvision==0.21.0+cu126
-torchaudio==2.6.0+cu126
-# For CPU builds use torch/vision/audio without +cu*, and set index to https://download.pytorch.org/whl/cpu
+# Torch (Installed via autorun.bat to handle index-url correctly)
+# See autorun.bat for the specific pip install command using the cu124 wheel index.
+
 
 # Hugging Face / Diffusion stack
 diffusers==0.30.3
