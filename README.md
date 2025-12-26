@@ -5,7 +5,7 @@
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
 - **Segment Fallback**: Uses greedy word alignment with fallback to segment matching for better timing.
-- **SRT Export**: Generates perfectly timed subtitles.
+- **SRT Export**: Generates timed subtitles.
 - **Karaoke Mode**: Options for per-word highlighting effects using advanced ASS subtitles.
     - **Robust Interpolation**: Uses official lyrics as the master source, ensuring no words are skipped even if transcription misses them.
     - **Multi-pass**: Automatically retries transcription to maximize accuracy for karaoke timing.
@@ -67,4 +67,4 @@ Then visit `http://localhost:8787` in your browser.
 - `configs/`: Theme and configuration files.
 
 ## License
-[Your License Here]
+Everything I have here was made using open source materials.
