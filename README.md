@@ -1,9 +1,4 @@
 # Lyricsync
-**Notes**
-- I have updated the requirements.txt file to resolve the issue with pytorch not installing correctly on 50 series nvidia cards.
-
-- I have also updated the autorun.bat file to ensure that the virtual environment is activated before running the script. If you are not using the autorun file this will have to be done manually.
-
 **Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
 ## Features
@@ -29,14 +24,25 @@
     ```
 
 2.  **Install Dependencies:**
-    It is recommended to use a virtual environment.
+    The recommended way is to simply run `autorun.bat`. This script will:
+    - Automatically create a virtual environment using Python 3.10.
+    - Install all dependencies (including PyTorch fixes for NVIDIA 50-series cards).
+    - Start the application.
+
+    **Manual Installation:**
+    If you prefer to set it up manually:
     ```bash
-    python -m venv .venv
+    # Ensure you are using Python 3.10
+    py -3.10 -m venv .venv
     # Windows
     .venv\Scripts\activate
     # Linux/Mac
     # source .venv/bin/activate
 
+    # Install specific torch version first (for CUDA support)
+    pip install torch==2.5.1+cu124 torchvision==0.20.1+cu124 torchaudio==2.5.1+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
+
+    # Install remaining requirements
     pip install -r requirements.txt
     ```
 
