@@ -1,6 +1,6 @@
 # Lyricsync
 
-**Lyricsync** is a powerful tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
+**Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
