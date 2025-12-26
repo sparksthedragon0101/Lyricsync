@@ -1,4 +1,8 @@
 # Lyricsync
+**Notes**
+- I have updated the requirements.txt file to resolve the issue with pytorch not installing correctly on 50 series nvidia cards.
+
+- I have also updated the autorun.bat file to ensure that the virtual environment is activated before running the script. If you are not using the autorun file this will have to be done manually.
 
 **Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
@@ -12,6 +16,9 @@
     - **Editor Support**: Timings can be fine-tuned in the web editor (Per-word Timing panel).
 - **Web Interface**: Interactive editor for fine-tuning lyrics and styles.
 - **Preview Generation**: Optional MP4 preview with burned-in subtitles.
+
+## Planned Features
+- **Kinetic Typography**: Animated subtitles with kinetic typography effects.
 
 ## Installation
 
@@ -67,4 +74,4 @@ Then visit `http://localhost:8787` in your browser.
 - `configs/`: Theme and configuration files.
 
 ## License
-Everything I have here was made using open source materials.
+Everything I have here was made using open source materials. This was a no code project from myself, all of it has been generated using AI. I have done my best to ensure that the program works as intended. But if there are any issues please let me know. I am also open to any suggestions for features or improvemens, please keep in mind that I am not a coder and it will take time for me to research and implement features. 
