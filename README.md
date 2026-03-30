@@ -1,6 +1,13 @@
 # Lyricsync
 **Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
+## Updates
+- Refactored so that it now works on Linux (Ubuntu Confirmed)
+- I have been working on word level timings, however in my testing Whisper is not very good at music and the timings vary wildly. I am exploring other options but for now the only thing I know to do is to go in an manually align them.
+- I will be pushing an update soon for the timing editor so that it can zoom in enough for the word level timings to be feasible.
+- I have toast messages for when generation starts and progress updates coming as soon as I stablize them.
+- I am working on getting ZImage Turbo and Flux to work but they are proving to be pretty challanging to get working correctly. 
+
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
 - **Segment Fallback**: Uses greedy word alignment with fallback to segment matching for better timing.
@@ -11,10 +18,7 @@
     - **Editor Support**: Timings can be fine-tuned in the web editor (Per-word Timing panel).
 - **Web Interface**: Interactive editor for fine-tuning lyrics and styles.
 - **Preview Generation**: Optional MP4 preview with burned-in subtitles.
-
-## Planned Features
-- **Kinetic Typography**: Animated subtitles with kinetic typography effects.
-
+  
 ## Installation
 
 1.  **Clone the repository:**
