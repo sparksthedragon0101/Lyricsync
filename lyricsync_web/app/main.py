@@ -226,8 +226,8 @@ class StoragePathRequest(BaseModel):
     path: str
 
 app = FastAPI(title="LyricSync Server")
-app.mount("/static", StaticFiles(directory=str((BASE_DIR / "static").resolve())), name="static")
-templates = Jinja2Templates(directory=str((BASE_DIR / "templates").resolve()))
+app.mount("/static", StaticFiles(directory=str((BASE_DIR / "Static").resolve())), name="static")
+templates = Jinja2Templates(directory=str((BASE_DIR / "Templates").resolve()))
 
 projects = Projects(PROJECTS_ROOT)
 jobs = JobManager(base_logs=PROJECTS_ROOT)
@@ -369,8 +369,9 @@ def dashboard_page(request: Request):
         "env_file": str(ENV_FILE_PATH),
     }
     return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "projects": projects.list_projects(), "storage_paths": storage_paths},
+        request=request,
+        name="dashboard.html",
+        context={"projects": projects.list_projects(), "storage_paths": storage_paths},
     )
     
 @app.get("/api/fonts")
@@ -444,7 +445,11 @@ def project_page(request: Request, slug: str):
     except ProjectNotFound:
         raise HTTPException(404, "Project not found")
     meta = projects.meta(slug)
-    return templates.TemplateResponse("project.html", {"request": request, "p": p, "meta": meta, "has_lyricsync": LYRICSYNC_PATH.exists()})
+    return templates.TemplateResponse(
+        request=request,
+        name="project.html",
+        context={"p": p, "meta": meta, "has_lyricsync": LYRICSYNC_PATH.exists()}
+    )
 
 @app.get("/projects/{slug}/edit", response_class=HTMLResponse)
 def editor_page(request: Request, slug: str):
@@ -452,7 +457,11 @@ def editor_page(request: Request, slug: str):
         p = projects.get(slug)
     except ProjectNotFound:
         raise HTTPException(404, "Project not found")
-    return templates.TemplateResponse("editor.html", {"request": request, "p": p})
+    return templates.TemplateResponse(
+        request=request,
+        name="editor.html",
+        context={"p": p}
+    )
 
 @app.get("/api/projects")
 def api_list_projects():
