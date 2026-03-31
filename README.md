@@ -11,6 +11,8 @@
 - **Ollama Integration**: Added support for local LLMs via Ollama for image prompt generation (configured via `.env`).
 - **Settings Persistence**: Unified web dashboard settings persistence and fixed UI synchronization issues (e.g., Ken Burns options visibility).
 - **Autostart**: Updated the autostart bat file for the Windows users. It should check for a .venv and dependencies and install them before starting the application now which should make it easier for non-technical users to get started.
+- **Increased Zoom**: Increased the zoom level of the web interface to make it easier to see the lyrics and the waveform for word level alignment. 
+        -**Note** There seems to be some compatability issues with the timing editor and the Opera browser. It works fine in Firefox. I have not had a chance to test it on Opera yet. The issue is a desync between where the audio is and what is playing making it difficult to time the words accurately.
 
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
