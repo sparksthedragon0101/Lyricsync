@@ -840,6 +840,7 @@ async function saveProjectImageSelection(paths) {
       device: readValue('ui-tx-device', 'auto'),
       compute_type: readValue('ui-tx-compute', 'float16'),
       enable_word_highlight: readCheckbox('ui-tx-highlight', false),
+      engine: readValue('ui-tx-engine', 'whisperx'),
     };
   }
 

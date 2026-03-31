@@ -1354,6 +1354,9 @@ async def api_align(
     compute_type = _cfg("compute_type", compute_type)
     vad = _cfg("vad", vad)
     prep_audio = _cfg("prep_audio", prep_audio)
+    engine = _cfg("engine", "whisperx")
+    if engine not in ("whisperx", "mfa"):
+        engine = "whisperx"
     enable_word_highlight = bool(body.get("enable_word_highlight") or body.get("word_highlight"))
 
     # ---------- pick an actual audio file ----------
@@ -1417,7 +1420,12 @@ async def api_align(
         "--shift-seconds", "3",
         "--prep-audio", prep_audio,
         "--keep-prep",
+        "--engine", engine,
     ]
+    # Force vocal separation when using MFA for better alignment quality
+    if engine == "mfa":
+        args[args.index("--separate")] = "--separate"
+        # Already set to "vocals" — just ensure it stays
     if enable_word_highlight:
         args.append("--enable-word-highlight")
         # Ensure we generate the cache during alignment so the editor can use it
@@ -1432,6 +1440,7 @@ async def api_align(
         lf.write(f"[LyricSync] Lyrics:  {lyrics_path}\n")
         lf.write(f"[LyricSync] Out SRT: {out_srt}\n")
         lf.write(f"[LyricSync] Out SRT+: {out_srt_shifted} (+3s)\n")
+        lf.write(f"[LyricSync] Engine:  {engine}\n")
         if enable_word_highlight:
             lf.write("[LyricSync] Word highlight flag: enabled (not yet wired in renderer)\n")
         lf.write("[LyricSync] Command:\n  " + " ".join(shlex.quote(str(x)) for x in full_cmd) + "\n")

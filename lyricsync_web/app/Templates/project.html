@@ -584,13 +584,27 @@
   <aside id="txDrawer" class="tx-drawer" aria-hidden="true">
     <header class="tx-drawer__header">
       <div>
-        <div class="tx-eyebrow">WhisperX</div>
-        <h4>Transcription Settings</h4>
+        <div class="tx-eyebrow" id="txEngineLabel">WhisperX</div>
+        <h4>Transcription &amp; Alignment Settings</h4>
       </div>
       <button id="btnTxClose" type="button" class="ghost-btn small"
         aria-label="Close transcription settings">&times;</button>
     </header>
     <div class="tx-drawer__body">
+      <label>
+        Alignment engine
+        <select id="ui-tx-engine">
+          <option value="whisperx" selected>WhisperX (Default)</option>
+          <option value="mfa">MFA — Montreal Forced Aligner</option>
+        </select>
+      </label>
+      <p class="tx-note" id="txEngineMfaNote" style="display:none; color:#ffd580;">
+        ⚡ MFA aligns your <strong>existing lyrics</strong> to the audio with phoneme-level precision.
+        WhisperX model settings below are ignored when MFA is active.
+        English only for now.
+      </p>
+
+      <fieldset id="txWhisperxFields" style="border:none; padding:0; margin:0;">
       <label>
         Model preset
         <select id="ui-tx-model">
@@ -627,10 +641,31 @@
         <input type="checkbox" id="ui-tx-highlight">
         Enable per-word highlight (coming soon)
       </label>
-      <p class="tx-note">
-        Settings are applied before each WhisperX run. Highlighting is scaffolded for a future release.
+      </fieldset>
+
+      <p class="tx-note" id="txSettingsNote">
+        Settings are applied before each alignment run.
       </p>
     </div>
+    <script>
+    (function() {
+      const sel = document.getElementById('ui-tx-engine');
+      const whisperxFields = document.getElementById('txWhisperxFields');
+      const mfaNote = document.getElementById('txEngineMfaNote');
+      const label = document.getElementById('txEngineLabel');
+      function onEngineChange() {
+        const isMfa = sel.value === 'mfa';
+        whisperxFields.disabled = isMfa;
+        whisperxFields.style.opacity = isMfa ? '0.4' : '1';
+        whisperxFields.style.pointerEvents = isMfa ? 'none' : '';
+        mfaNote.style.display = isMfa ? 'block' : 'none';
+        label.textContent = isMfa ? 'MFA' : 'WhisperX';
+      }
+      sel.addEventListener('change', onEngineChange);
+      // Fire once on load in case localStorage restored it
+      onEngineChange();
+    })();
+    </script>
   </aside>
   <style>
     .project-panel {

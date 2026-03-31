@@ -41,6 +41,13 @@ fonts/
 # OS Files
 Thumbs.db
 .DS_Store
+*.lab
+*.textgrid
+*.TextGrid
+*.csv
+*.yaml
+*.txt
+*.sh
 
 # User-specific data
 official_lyrics.txt

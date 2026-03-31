@@ -320,11 +320,18 @@ def _separate_vocals_demucs(src_path: str, model: str, device: str) -> str:
         except Exception:
             dev = "cpu"
 
+    # Find demucs binary relative to the current python interpreter
+    import sys
+    demucs_bin = os.path.join(os.path.dirname(sys.executable), "demucs")
+    if not os.path.exists(demucs_bin):
+        import shutil
+        demucs_bin = shutil.which("demucs") or "demucs"
+
     # Demucs writes to ./separated/{model}/{basename}/vocals.wav
     # We send output to a temp dir so we can locate it deterministically.
     outdir = tempfile.mkdtemp(prefix="demucs_")
     cmd = [
-        "demucs",
+        demucs_bin,
         "-n", model,
         "-d", dev,
         "--two-stems", "vocals",
@@ -333,8 +340,8 @@ def _separate_vocals_demucs(src_path: str, model: str, device: str) -> str:
     ]
     try:
         subprocess.run(cmd, check=True)
-    except FileNotFoundError:
-        raise SystemExit("demucs is not installed or not in PATH. Install with: pip install demucs")
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        raise SystemExit(f"demucs is not installed or not in PATH ({demucs_bin}). Install with: pip install demucs")
     except subprocess.CalledProcessError as e:
         raise SystemExit(f"Demucs failed (code {e.returncode}). Try a different model or device.")
 
@@ -974,6 +981,297 @@ def _do_transcribe(audio_path: str,
     print(f"[WhisperX] Segments: {len(segs)}  Words: {len(words)}  Model: {model_size} ({resolved_device})")
     return words, segs, total
 
+
+# ---------- MFA (Montreal Forced Aligner) ----------
+
+def _do_mfa_align(audio_path: str,
+                  lyrics_path: str,
+                  language: str = "english",
+                  device: str = "auto") -> "tuple[List[Word], List[Seg], float]":
+    """
+    Runs Montreal Forced Aligner to produce word-level timestamps from known lyrics.
+    Returns (words, segs, total_dur) matching the same interface as _do_transcribe.
+
+    Requires:
+      - `montreal-forced-aligner` installed (pip install montreal-forced-aligner)
+      - English acoustic model + dictionary (downloaded on first use via `mfa model download`)
+    """
+    import shutil as _shutil
+
+    # Find MFA binary — prefer the direct binary in the conda env over mamba run
+    mfa_env_dir = os.path.expanduser("~/miniforge3/envs/mfa")
+    mfa_direct_bin = os.path.join(mfa_env_dir, "bin", "mfa")
+    mfa_cmd_prefix = []  # type: List[str]
+    mfa_subprocess_env = None  # type: dict | None
+
+    if os.path.isfile(mfa_direct_bin):
+        # Call MFA binary directly with conda env vars set
+        mfa_cmd_prefix = [mfa_direct_bin]
+        mfa_subprocess_env = os.environ.copy()
+        mfa_subprocess_env["CONDA_PREFIX"] = mfa_env_dir
+        mfa_subprocess_env["PATH"] = os.path.join(mfa_env_dir, "bin") + ":" + mfa_subprocess_env.get("PATH", "")
+        mfa_subprocess_env["LD_LIBRARY_PATH"] = os.path.join(mfa_env_dir, "lib") + ":" + mfa_subprocess_env.get("LD_LIBRARY_PATH", "")
+        # Remove venv vars that could confuse conda
+        mfa_subprocess_env.pop("VIRTUAL_ENV", None)
+    else:
+        found_mfa = _shutil.which("mfa")
+        if found_mfa:
+            mfa_cmd_prefix = [found_mfa]
+
+    if not mfa_cmd_prefix:
+        raise SystemExit(
+            "Montreal Forced Aligner (mfa) is not installed.\n"
+            "Expected binary at: " + mfa_direct_bin + "\n"
+            "Please ensure ~/miniforge3/envs/mfa/ exists or mfa is in your PATH."
+        )
+
+    # --- ensure models are available ---
+    _mfa_ensure_models()
+
+    # --- build an MFA corpus directory ---
+    # We use a project-local directory to ensure the Mamba environment can see it
+    # System /tmp can sometimes be isolated per-process or restricted.
+    base_mfa_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "mfa_tmp")
+    os.makedirs(base_mfa_dir, exist_ok=True)
+    
+    # Unique subdirs for this run
+    run_id = os.urandom(4).hex()
+    corpus_dir = os.path.join(base_mfa_dir, f"corpus_{run_id}")
+    output_dir = os.path.join(base_mfa_dir, f"output_{run_id}")
+    os.makedirs(corpus_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # MFA 3+ removed --beam flags from the CLI, so we must use a YAML config
+    mfa_config_path = os.path.join(base_mfa_dir, f"config_{run_id}.yaml")
+    with open(mfa_config_path, "w", encoding="utf-8") as f:
+        f.write("beam: 100\nretry_beam: 400\n")
+
+    try:
+        # MFA expects: corpus/<utterance>.wav + corpus/<utterance>.lab
+        wav_path = os.path.join(corpus_dir, "utterance.wav")
+        _mfa_convert_audio(audio_path, wav_path)
+
+        lab_path = os.path.join(corpus_dir, "utterance.lab")
+        _mfa_create_lab(lyrics_path, lab_path)
+
+        # DEBUG: List files to ensure population
+        try:
+            files = os.listdir(corpus_dir)
+            print(f"[MFA] Corpus directory prepared at: {corpus_dir}")
+            print(f"[MFA] Files in corpus: {files}")
+        except Exception as e:
+            print(f"[MFA] Error listing corpus: {e}")
+
+        if not os.path.exists(corpus_dir) or not os.listdir(corpus_dir):
+            raise SystemExit(f"MFA corpus directory is empty or missing: {corpus_dir}")
+
+        # Small delay to ensure filesystem sync on some environments
+        import time
+        time.sleep(1)
+
+        # --- run MFA align ---
+        cmd = mfa_cmd_prefix + [
+            "align",
+            "--clean",
+            "--single_speaker",
+            "--output_format", "long_textgrid",
+            "--config_path", mfa_config_path,
+            corpus_dir,
+            "english_us_arpa",   # dictionary
+            "english_us_arpa",   # acoustic model
+            output_dir,
+        ]
+        print(f"[MFA] Running: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+            env=mfa_subprocess_env,
+        )
+        if result.returncode != 0:
+            stderr_tail = (result.stderr or "")[-2000:]
+            print(f"[MFA] STDERR:\n{stderr_tail}")
+            raise SystemExit(f"MFA alignment failed (code {result.returncode}). See log above.")
+
+        # --- parse TextGrid output ---
+        tg_path = os.path.join(output_dir, "utterance.TextGrid")
+        if not os.path.exists(tg_path):
+            # MFA sometimes nests output
+            for root, dirs, files in os.walk(output_dir):
+                for f in files:
+                    if f.endswith(".TextGrid"):
+                        tg_path = os.path.join(root, f)
+                        break
+
+        if not os.path.exists(tg_path):
+            raise SystemExit(f"MFA completed but no TextGrid found in {output_dir}")
+
+        words, segs = _parse_textgrid(tg_path)
+        total_dur = max((w.end for w in words), default=0.0)
+        if not total_dur:
+            total_dur = _probe_duration_seconds(audio_path)
+
+        print(f"[MFA] Segments: {len(segs)}  Words: {len(words)}  Duration: {total_dur:.1f}s")
+        return words, segs, total_dur
+
+    finally:
+        # Cleanup temp dirs
+        _shutil.rmtree(corpus_dir, ignore_errors=True)
+        _shutil.rmtree(output_dir, ignore_errors=True)
+
+
+def _mfa_ensure_models():
+    """Download MFA English acoustic model and dictionary if not present."""
+    import shutil as _shutil
+    # Use direct binary from conda env
+    mfa_env_dir = os.path.expanduser("~/miniforge3/envs/mfa")
+    mfa_direct_bin = os.path.join(mfa_env_dir, "bin", "mfa")
+    if os.path.isfile(mfa_direct_bin):
+        mfa_exec = [mfa_direct_bin]
+        mfa_env = os.environ.copy()
+        mfa_env["CONDA_PREFIX"] = mfa_env_dir
+        mfa_env["PATH"] = os.path.join(mfa_env_dir, "bin") + ":" + mfa_env.get("PATH", "")
+        mfa_env["LD_LIBRARY_PATH"] = os.path.join(mfa_env_dir, "lib") + ":" + mfa_env.get("LD_LIBRARY_PATH", "")
+        mfa_env.pop("VIRTUAL_ENV", None)
+    else:
+        mfa_bin = _shutil.which("mfa")
+        if not mfa_bin:
+            return
+        mfa_exec = [mfa_bin]
+        mfa_env = None
+
+    # Check if models exist
+    try:
+        result = subprocess.run(
+            mfa_exec + ["model", "list", "acoustic"],
+            capture_output=True, text=True, timeout=30, env=mfa_env
+        )
+        if "english_us_arpa" not in (result.stdout or ""):
+            print("[MFA] Downloading English acoustic model...")
+            subprocess.run(
+                mfa_exec + ["model", "download", "acoustic", "english_us_arpa"],
+                check=True, timeout=300, env=mfa_env
+            )
+    except Exception as e:
+        print(f"[MFA] Warning: could not verify/download acoustic model: {e}")
+
+    try:
+        result = subprocess.run(
+            mfa_exec + ["model", "list", "dictionary"],
+            capture_output=True, text=True, timeout=30, env=mfa_env
+        )
+        if "english_us_arpa" not in (result.stdout or ""):
+            print("[MFA] Downloading English dictionary...")
+            subprocess.run(
+                mfa_exec + ["model", "download", "dictionary", "english_us_arpa"],
+                check=True, timeout=300, env=mfa_env
+            )
+    except Exception as e:
+        print(f"[MFA] Warning: could not verify/download dictionary: {e}")
+
+
+def _mfa_convert_audio(src: str, dst_wav: str):
+    """Convert any audio to 16kHz mono WAV for MFA."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise SystemExit("ffmpeg is required for MFA audio conversion")
+    cmd = [
+        ffmpeg, "-y", "-i", src,
+        "-ac", "1", "-ar", "16000",
+        "-sample_fmt", "s16",
+        dst_wav,
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def _mfa_create_lab(lyrics_path: str, lab_path: str):
+    """Create a .lab file from lyrics for MFA input."""
+    with open(lyrics_path, "r", encoding="utf-8") as f:
+        raw = f.read()
+    # MFA expects all text on one logical block; join non-empty lines with spaces
+    lines = [ln.strip() for ln in raw.splitlines()]
+    # Remove section headers like [Chorus], [Verse 1] etc.
+    cleaned = []
+    section_re = re.compile(
+        r'^\s*\[(?:verse|chorus|bridge|pre-chorus|post-chorus|intro|outro|hook|refrain|break|solo)(?:[^\]]*)\]\s*$',
+        flags=re.IGNORECASE
+    )
+    for ln in lines:
+        if section_re.match(ln):
+            continue
+        if ln:
+            cleaned.append(ln)
+    text = " ".join(cleaned)
+    # MFA only handles [a-zA-Z' ] well; strip anything else
+    text = re.sub(r"[^\w\s']", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    with open(lab_path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def _parse_textgrid(tg_path: str) -> "tuple[List[Word], List[Seg]]":
+    """
+    Parse an MFA-produced TextGrid file to extract word and phone intervals.
+    Returns (words, segs) where segs are sentence-level groupings.
+    """
+    words: List[Word] = []
+    segs: List[Seg] = []
+
+    with open(tg_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Parse the "words" tier from long TextGrid format
+    # Look for the tier named "words"
+    tier_pattern = re.compile(
+        r'item\s*\[\d+\].*?name\s*=\s*"words".*?intervals\s*:.*?size\s*=\s*(\d+)(.*?)(?=item\s*\[|$)',
+        re.DOTALL | re.IGNORECASE
+    )
+    match = tier_pattern.search(content)
+    if not match:
+        print(f"[MFA] Warning: no 'words' tier found in TextGrid")
+        return words, segs
+
+    intervals_text = match.group(2)
+    interval_pattern = re.compile(
+        r'intervals\s*\[\d+\].*?xmin\s*=\s*([\d.]+).*?xmax\s*=\s*([\d.]+).*?text\s*=\s*"([^"]*)"',
+        re.DOTALL
+    )
+
+    current_seg_words: List[str] = []
+    seg_start: Optional[float] = None
+
+    for m in interval_pattern.finditer(intervals_text):
+        xmin = float(m.group(1))
+        xmax = float(m.group(2))
+        text = m.group(3).strip()
+
+        if not text:
+            # Empty interval = silence/pause; close current segment
+            if current_seg_words and seg_start is not None:
+                segs.append(Seg(
+                    text=" ".join(current_seg_words),
+                    start=seg_start,
+                    end=words[-1].end if words else xmin,
+                ))
+                current_seg_words = []
+                seg_start = None
+            continue
+
+        words.append(Word(text=text, start=xmin, end=xmax))
+        if seg_start is None:
+            seg_start = xmin
+        current_seg_words.append(text)
+
+    # Close final segment
+    if current_seg_words and seg_start is not None:
+        segs.append(Seg(
+            text=" ".join(current_seg_words),
+            start=seg_start,
+            end=words[-1].end if words else 0.0,
+        ))
+
+    return words, segs
 
 
 def _needs_vad_retry(words: List[Word], segs: List[Seg], total_dur: float, lyric_lines: List[str]) -> bool:
@@ -2334,8 +2632,9 @@ def build_karaoke_ass(
         # Use SequenceMatcher on the normalized text.
         
         # 1. Normalize for matching
+        # MFA might have different capitalization or formatting; coerce to lower and strip punctuation
         norm_official = [re.sub(r"[^\w]", "", t).lower() for t in official_tokens]
-        norm_tx = [re.sub(r"[^\w]", "", w.text).lower() for w in tx_words]
+        norm_tx = [re.sub(r"[^\w]", "", str(w.text)).lower() for w in tx_words]
         
         sm = SequenceMatcher(None, norm_official, norm_tx)
         opcodes = sm.get_opcodes()
@@ -2637,6 +2936,8 @@ def main() -> None:
                     help="Demucs model name (e.g., htdemucs, htdemucs_ft, mdx_extra, etc.).")
     ap.add_argument("--demucs-device", default="auto",
                     help="'cuda'|'cpu'|'auto' for separation backend.")
+    ap.add_argument("--engine", default="whisperx", choices=["whisperx", "mfa"],
+                    help="Alignment engine: 'whisperx' (ASR + align) or 'mfa' (Montreal Forced Aligner, needs lyrics).")
     ap.add_argument(
         "--prep-audio",
         choices=["auto", "off", "center", "bandpass", "nr", "speech"],
@@ -2832,6 +3133,8 @@ def main() -> None:
     words, segs = [], []
     total_dur = _probe_duration_seconds(args.audio) 
 
+    use_mfa = getattr(args, 'engine', 'whisperx') == 'mfa'
+
     # Determine if we can load words
     loaded_words = False
     if args.words_cache and os.path.exists(args.words_cache):
@@ -2852,6 +3155,21 @@ def main() -> None:
         # If we didn't load them, we MUST transcribe.
         print("SRT-only mode: skipping transcription.")
         words, segs = [], []
+    elif use_mfa:
+        print("[MFA] Using Montreal Forced Aligner for word-level alignment...")
+        words, segs, total_dur = _do_mfa_align(
+            audio_path=asr_audio,
+            lyrics_path=args.lyrics,
+            language="english",
+            device=args.device,
+        )
+        if args.words_cache:
+            print(f"Saving MFA words to {args.words_cache}")
+            save_words_json(words, args.words_cache)
+        # Force karaoke mode for MFA if not explicitly disabled
+        if not args.no_subs:
+            print("[MFA] Enabling word highlighting for karaoke output.")
+            setattr(args, "enable_word_highlight", True)
     else:
         print(f"Transcribing (VAD={vad_mode}).")
         words, segs, total_dur = _do_transcribe(
@@ -2871,10 +3189,11 @@ def main() -> None:
 
     # Auto-VAD retry / Multi-pass for Karaoke
     # If karaoke is enabled, we aggressively try to get the best transcription (more words).
+    # Skip VAD retry when using MFA (forced alignment doesn't use VAD)
     should_retry = False
     is_karaoke = getattr(args, "enable_word_highlight", False)
     
-    if (not loaded_words) and (not args.srt_only) and vad_mode == "auto":
+    if (not loaded_words) and (not args.srt_only) and (not use_mfa) and vad_mode == "auto":
         if is_karaoke:
             should_retry = True # Always try VAD=off for karaoke to maximize chances
         elif _needs_vad_retry(words, segs, total_dur, lyric_lines):
