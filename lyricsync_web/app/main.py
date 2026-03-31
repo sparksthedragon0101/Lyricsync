@@ -1858,6 +1858,10 @@ async def api_render(
     effect_pan: float | None = None,
     fps: int = 30,
     word_highlight: bool = False,
+    vcodec: str = "auto",
+    vpreset: str = "veryfast",
+    vcrf: int = 20,
+    vbitrate: str | None = None,
 
     ):
     font_color            = "#FFFFFF"
@@ -1868,6 +1872,10 @@ async def api_render(
     image_fade_seconds: float | None = None
     image_playback = "story"
     story_slots: List[Dict[str, Any]] = []
+    vcodec         = "auto"
+    vpreset        = "veryfast"
+    vcrf           = 20
+    vbitrate       = None
     # ---- Merge JSON body (so the UI checkboxes actually take effect) ----
     try:
         if request.headers.get("content-type", "").startswith("application/json"):
@@ -1925,6 +1933,13 @@ async def api_render(
                 story_slots = _normalize_story_slots(image_opts.get("story_slots"))
                 if image_playback == "story":
                     image_clip_seconds = None
+                
+                # ---- Encoding options ----
+                enc = data.get("encoding") or {}
+                vcodec   = enc.get("vcodec", vcodec)
+                vpreset  = enc.get("vpreset", vpreset)
+                vcrf     = int(enc.get("vcrf", vcrf))
+                vbitrate = enc.get("vbitrate", vbitrate)
                 
     except Exception:
         pass
@@ -1986,6 +2001,9 @@ async def api_render(
         "--align", str(ass_align),
         "--margin-v", str(margin_v),
         "--force-res", force_res,
+        "--vcodec", vcodec,
+        "--vpreset", vpreset,
+        "--vcrf", str(vcrf),
         
     ]
     
@@ -1999,6 +2017,8 @@ async def api_render(
         "--effect-cycle", str(effect_cycle),
         "--fps", str(fps),
     ]
+    if vbitrate:
+        cmd += ["--vbitrate", str(vbitrate)]
     if effect_zoom is not None:
         cmd += ["--effect-zoom", str(effect_zoom)]
     if effect_pan is not None:

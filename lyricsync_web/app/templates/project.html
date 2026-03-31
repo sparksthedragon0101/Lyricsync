@@ -74,6 +74,9 @@
                   Effects <span id="tab-badge-effects" class="tab-badge" hidden>●</span>
                 </button>
                 <button type="button" class="tab-btn" data-tab-group="render-tabs" data-tab="tab-images">Images</button>
+                <button type="button" class="tab-btn" data-tab-group="render-tabs" data-tab="tab-video">
+                  Video <span id="tab-badge-video" class="tab-badge" hidden>●</span>
+                </button>
               </div>
 
               <!-- Lyrics panel -->
@@ -239,6 +242,7 @@
                 </div>
               </div>
 
+              <!-- Images panel -->
               <div id="tab-images" class="tab-panel" data-tab-group="render-tabs">
                 <h3>Image Playback</h3>
                 <div class="grid2">
@@ -261,6 +265,51 @@
                 <p class="muted" style="margin-top:6px;">
                   Story mode plays each selected image once across the video and keeps the last frame through the
                   ending. Loop mode cycles through the images repeatedly until the song finishes.
+                </p>
+              </div>
+
+              <!-- Video panel -->
+              <div id="tab-video" class="tab-panel" data-tab-group="render-tabs">
+                <h3>Video Encoding</h3>
+                <div class="grid2">
+                  <label>
+                    Video Codec
+                    <select id="ui-vcodec">
+                      <option value="auto">Auto (Hardware > CPU)</option>
+                      <option value="libx264">libx264 (CPU - standard)</option>
+                      <option value="libx265">libx265 (CPU - high efficiency)</option>
+                      <option value="h264_nvenc">h264_nvenc (NVIDIA GPU)</option>
+                      <option value="h264_qsv">h264_qsv (Intel QuickSync)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Preset
+                    <select id="ui-vpreset">
+                      <option value="ultrafast">ultrafast</option>
+                      <option value="superfast">superfast</option>
+                      <option value="veryfast" selected>veryfast</option>
+                      <option value="faster">faster</option>
+                      <option value="fast">fast</option>
+                      <option value="medium">medium</option>
+                      <option value="slow">slow</option>
+                      <option value="slower">slower</option>
+                      <option value="veryslow">veryslow</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="grid2">
+                  <label>
+                    CRF (0–51, lower = better)
+                    <input id="ui-vcrf" type="number" min="0" max="51" value="20">
+                  </label>
+                  <label>
+                    Target Bitrate (e.g. 5M)
+                    <input id="ui-vbitrate" type="text" placeholder="auto (leave blank)">
+                  </label>
+                </div>
+                <p class="muted" style="margin-top:8px; font-size:0.85em;">
+                  <strong>Auto:</strong> Attempts modern hardware acceleration first, falling back to libx264 if unavailable.
+                  <br><strong>CRF:</strong> Only applies to libx26x CPU encoders. For hardware, use Bitrate for quality control.
                 </p>
               </div>
 
@@ -2117,12 +2166,12 @@
 </div>
 
 <script>
-  // Defaults used to show "changed" chips/badges
   const defaults = {
     effect: "none", effect_strength: 0.08, effect_cycle: 12, fps: 30,
     effect_zoom: 0.12, effect_pan: 0.35,
     style: "burn-srt", text_theme: "default", font: "Arial", font_size: 20, outline: 2,
-    show_title: true, use_mp3_title: true, show_end_card: true
+    show_title: true, use_mp3_title: true, show_end_card: true,
+    vcodec: "auto", vpreset: "veryfast", vcrf: 20, vbitrate: ""
   };
 
   function getInput(id) {
@@ -2376,6 +2425,10 @@
       effect_zoom: readFloat('ui-kenburns-zoom', defaults.effect_zoom),
       effect_pan: readFloat('ui-kenburns-pan', defaults.effect_pan),
       fps: readInt('ui-fps', defaults.fps),
+      vcodec: readValue('ui-vcodec', defaults.vcodec),
+      vpreset: readValue('ui-vpreset', defaults.vpreset),
+      vcrf: readInt('ui-vcrf', defaults.vcrf),
+      vbitrate: readValue('ui-vbitrate', defaults.vbitrate),
     };
     return payload;
   }
@@ -2402,6 +2455,18 @@
     if (payload.outline !== defaults.outline) chips.push(`outline: ${payload.outline}`);
     if (payload.show_title !== defaults.show_title) chips.push(`title: ${payload.show_title ? 'on' : 'off'}`);
     if (payload.show_end_card !== defaults.show_end_card) chips.push(`endcard: ${payload.show_end_card ? 'on' : 'off'}`);
+
+    if (payload.vcodec !== defaults.vcodec) {
+      chips.push(`codec: ${payload.vcodec}`);
+      $('#tab-badge-video').hidden = false;
+    } else if (payload.vpreset !== defaults.vpreset || payload.vcrf !== defaults.vcrf || payload.vbitrate !== defaults.vbitrate) {
+      $('#tab-badge-video').hidden = false;
+    } else {
+      $('#tab-badge-video').hidden = true;
+    }
+    if (payload.vpreset !== defaults.vpreset) chips.push(`preset: ${payload.vpreset}`);
+    if (payload.vcrf !== defaults.vcrf) chips.push(`crf: ${payload.vcrf}`);
+    if (payload.vbitrate !== defaults.vbitrate && payload.vbitrate) chips.push(`bitrate: ${payload.vbitrate}`);
 
     const summary = $('#summary');
     if (summary) {

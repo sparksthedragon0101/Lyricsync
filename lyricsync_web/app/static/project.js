@@ -379,6 +379,12 @@ window.UI = UI;
         fade_seconds: readFloat('ui-img-fade', 1),
         playback: readValue('ui-img-playback', 'story'),
         story_slots: State.storySlots // Use state
+      },
+      encoding: {
+        vcodec: readValue('ui-vcodec', 'auto'),
+        vpreset: readValue('ui-vpreset', 'veryfast'),
+        vcrf: readInt('ui-vcrf', 20),
+        vbitrate: readValue('ui-vbitrate', '') || null
       }
     };
   }

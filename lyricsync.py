@@ -1399,6 +1399,37 @@ def _parse_textgrid(tg_path: str) -> "tuple[List[Word], List[Seg]]":
     return words, segs
 
 
+def get_best_encoder() -> str:
+    """
+    Attempt to find the best available H.264 encoder.
+    Prefer NVIDIA NVENC -> QuickSync -> libx264 (CPU).
+    """
+    try:
+        # Check for NVIDIA GPU presence via nvidia-smi (fastest check)
+        # Note: even if card is there, ffmpeg might not have the encoder, 
+        # so we also check ffmpeg -encoders.
+        cmd = ["ffmpeg", "-hide_banner", "-encoders"]
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        encoders = res.stdout.lower()
+
+        if "h264_nvenc" in encoders:
+            # Check if we can actually initialize it
+            # (sometimes the driver is missing or buggy)
+            test_cmd = ["ffmpeg", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"]
+            if subprocess.run(test_cmd, capture_output=True).returncode == 0:
+                print("[LyricSync] GPU detected: using h264_nvenc")
+                return "h264_nvenc"
+        
+        if "h264_qsv" in encoders:
+             return "h264_qsv"
+             
+    except Exception:
+        pass
+    
+    print("[LyricSync] Using compatible CPU encoder: libx264")
+    return "libx264"
+
+
 def _needs_vad_retry(words: List[Word], segs: List[Seg], total_dur: float, lyric_lines: List[str]) -> bool:
     if total_dur <= 0:
         return True
@@ -1625,6 +1656,10 @@ def make_preview(
     image_fade_seconds: float | None = None,
     image_playback: str = "story",
     image_slots: List[Dict] | None = None,
+    vcodec: str = "libx264",
+    vpreset: str = "veryfast",
+    vcrf: int = 20,
+    vbitrate: str | None = None,
 ):
     if isinstance(image, (list, tuple, set)):
         images = [str(x) for x in image if x]
@@ -1669,9 +1704,21 @@ def make_preview(
         fallback_name = os.path.splitext(os.path.basename(font_file))[0] or chosen_font_name
         chosen_font_name = internal or fallback_name or "Arial"
 
+    if vcodec == "auto":
+        vcodec = get_best_encoder()
+
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
     post_input_opts = [
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-tune", "stillimage",
+        "-c:v", vcodec, "-preset", vpreset,
+    ]
+    if vbitrate:
+        post_input_opts += ["-b:v", vbitrate]
+    elif "libx26" in vcodec:
+        # CRF only works with libx264/libx265
+        post_input_opts += ["-crf", str(vcrf)]
+    
+    post_input_opts += [
+        "-tune", "stillimage",
         "-pix_fmt", "yuv420p",
         "-progress", "pipe:1",
         "-c:a", "aac", "-b:a", "192k",
@@ -3105,6 +3152,16 @@ def main() -> None:
     ap.add_argument("--fps", type=int, default=30,
                     help="Preview render FPS (used by image-based effects).")
 
+    # --- video encoding ---
+    ap.add_argument("--vcodec", default="libx264",
+                    help="Video encoder (e.g. libx264, libx265, h264_nvenc, hevc_nvenc, qsv, auto).")
+    ap.add_argument("--vpreset", default="veryfast",
+                    help="Encoder preset (e.g. ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow).")
+    ap.add_argument("--vcrf", type=int, default=20,
+                    help="Constant Rate Factor (0-51, lower is better quality). Only for libx26x.")
+    ap.add_argument("--vbitrate", default=None,
+                    help="Constant bitrate (e.g. 5M) for GPU encoders that don't support CRF well.")
+
 
     
     args = ap.parse_args()
@@ -3213,6 +3270,7 @@ def main() -> None:
             except json.JSONDecodeError:
                 print("[WARN] Invalid JSON in --image-slots argument. Ignoring.")
 
+        # --- Final Render Step ---
         make_preview(
             image=args.preview_image,
             audio=args.audio,
@@ -3245,6 +3303,10 @@ def main() -> None:
             image_fade_seconds=args.image_fade_seconds,
             image_playback=args.image_playback,
             image_slots=image_slots,
+            vcodec=args.vcodec,
+            vpreset=args.vpreset,
+            vcrf=args.vcrf,
+            vbitrate=args.vbitrate,
         )
         print("Done.")
         print(f"  - {args.preview_out}")

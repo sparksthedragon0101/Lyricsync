@@ -13,8 +13,13 @@
 - **Autostart**: Updated the autostart bat file for the Windows users. It should check for a .venv and dependencies and install them before starting the application now which should make it easier for non-technical users to get started.
 - **Increased Zoom**: Increased the zoom level of the web interface to make it easier to see the lyrics and the waveform for word level alignment. 
         -**Note** There seems to be some compatability issues with the timing editor and the Opera browser. It works fine in Firefox. I have not had a chance to test it on Opera yet. The issue is a desync between where the audio is and what is playing making it difficult to time the words accurately.
+- **CPU Video Rendering & GPU Fallback**: Added flexible video encoding options (`libx264`, `libx265`, `h264_nvenc`, `h264_qsv`).
+    - **Smart Fallback**: The new `auto` mode automatically detects and uses GPU acceleration (NVIDIA/Intel) when available, falling back to CPU rendering if hardware is missing.
 
 ## Features
+- **Flexible Video Encoding**: Configure video rendering for high-performance GPUs or low-resource CPU environments.
+    - **Auto-Detection**: Seamlessly switches between NVIDIA NVENC, Intel QuickSync, and standard CPU rendering.
+    - **Quality Controls**: Custom CRF (Constant Rate Factor) and Bitrate settings for fine-tuned output quality.
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
 - **Segment Fallback**: Uses greedy word alignment with fallback to segment matching for better timing.
 - **SRT Export**: Generates timed subtitles.
@@ -81,6 +86,10 @@ python lyricsync.py --audio song.mp3 --lyrics lyrics.txt --device cuda
 
 # Enable Karaoke (Per-Word) Timing
 python lyricsync.py --audio song.mp3 --lyrics lyrics.txt --enable-word-highlight --style burn-srt
+
+# Advanced Video Encoding
+python lyricsync.py --audio song.mp3 --vcodec auto --vpreset fast --vcrf 18
+python lyricsync.py --audio song.mp3 --vcodec h264_nvenc --vbitrate 8M
 ```
 
 ### Web App
