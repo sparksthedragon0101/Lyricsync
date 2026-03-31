@@ -30,3 +30,17 @@ colorama==0.4.6
 ollama==0.1.7
 srt==3.5.3
 compel==2.0.2
+
+# Alignment & Processing
+faster-whisper
+demucs
+mutagen
+orjson
+webvtt-py
+numba
+pandas
+nltk
+fontTools
+peft
+omegaconf
+gguf>=0.10.0

@@ -5,17 +5,29 @@
   <meta charset="utf-8" />
   <title>LyricSync</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/static/app.css" />
+  <link rel="icon" type="image/png" href="/static/favicon.png" />
+  <link rel="stylesheet" href="/static/app.css?v=51" />
 </head>
 
 <body>
   <header class="top">
-    <a class="brand" href="/">LyricSync</a>
+    <div class="header-left">
+      <a class="brand" href="/">LyricSync <small
+          style="font-size:0.5em; opacity:0.5; font-weight:normal;">v1.2.0</small></a>
+    </div>
+    <div class="header-right">
+      <button id="force-refresh-btn" class="btn-refresh" title="Force reload page and ignore cache">
+        Force Refresh
+      </button>
+    </div>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
   <div id="toast-container" class="toast-container"></div>
+  <div id="lightbox" hidden>
+    <img id="lightbox-img" src="" alt="Lightbox preview">
+  </div>
   <style>
     .toast-container {
       position: fixed;
@@ -57,6 +69,12 @@
       border-left-color: #dc3545;
     }
   </style>
+  <script>
+    document.getElementById('force-refresh-btn')?.addEventListener('click', () => {
+      // Attempt to force a reload from the server
+      window.location.reload(true);
+    });
+  </script>
 </body>
 
 </html>

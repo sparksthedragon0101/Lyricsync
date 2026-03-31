@@ -9,8 +9,15 @@
       <label>Raw lyrics (paste here):</label>
       <textarea id="pl-raw" style="width:100%;height:220px;background:#0d0d0d;color:#eee;border:1px solid #333;border-radius:8px;padding:10px;"></textarea>
 
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <label><input id="pl-also-official" type="checkbox"> Also save as <code>official_lyrics.txt</code></label>
+      <div style="display:flex;gap:15px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input id="pl-also-official" type="checkbox" style="width:auto;margin:0;">
+          <span>Also save as <code>official_lyrics.txt</code></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input id="pl-is-story" type="checkbox" style="width:auto;margin:0;">
+          <span>Story Mode (Chunking)</span>
+        </label>
         <button id="pl-preview" type="button" style="background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:6px 10px;cursor:pointer">Preview Clean</button>
         <button id="pl-save" type="button" style="background:#2e7d32;color:#fff;border:1px solid #1b5e20;border-radius:6px;padding:6px 12px;cursor:pointer">Save as edited.txt</button>
       </div>

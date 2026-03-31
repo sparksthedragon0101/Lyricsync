@@ -23,13 +23,58 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import json
+import orjson
+import site
 import os
 import re
 import shutil
 import subprocess, tempfile
 import sys
 import glob
+
+# --- NVIDIA DLL Path Fix (for ctranslate2 / whisperx on Windows) ---
+if sys.platform == "win32":
+    # 1. Try to find nvidia DLLs in all site-packages (handles different venv names)
+    _found_cuda = False
+    for _site in site.getsitepackages():
+        _cuda_base = os.path.join(_site, "nvidia")
+        if os.path.isdir(_cuda_base):
+            _bin_paths = [
+                os.path.join(_cuda_base, "cublas", "bin"),
+                os.path.join(_cuda_base, "cudnn", "bin"),
+                os.path.join(_cuda_base, "cuda_runtime", "bin"),
+            ]
+            for _p in _bin_paths:
+                if os.path.isdir(_p):
+                    # For Python 3.8+, os.add_dll_directory is the canonical way
+                    if hasattr(os, "add_dll_directory"):
+                        try:
+                            os.add_dll_directory(_p)
+                            _found_cuda = True
+                        except Exception:
+                            pass
+                    # Still add to PATH for older python or fallback
+                    if _p not in os.environ["PATH"]:
+                        os.environ["PATH"] = _p + os.pathsep + os.environ["PATH"]
+                        _found_cuda = True
+    
+    # 2. Hardcoded fallback for the common .venv location if site-packages didn't work
+    if not _found_cuda:
+        _base = os.path.dirname(os.path.abspath(__file__))
+        _venv_site = os.path.join(_base, ".venv", "Lib", "site-packages")
+        _cuda_paths = [
+            os.path.join(_venv_site, "nvidia", "cublas", "bin"),
+            os.path.join(_venv_site, "nvidia", "cudnn", "bin"),
+        ]
+        for _p in _cuda_paths:
+            if os.path.isdir(_p):
+                if hasattr(os, "add_dll_directory"):
+                    try:
+                        os.add_dll_directory(_p)
+                    except Exception:
+                        pass
+                if _p not in os.environ["PATH"]:
+                    os.environ["PATH"] = _p + os.pathsep + os.environ["PATH"]
 import math
 import tempfile
 import uuid
@@ -42,6 +87,90 @@ from effects import build_effect_filter, choices as effect_choices
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="ctranslate2")
+
+# --- Torchaudio Compatibility Monkeypatch (for Python 3.13 / Torchaudio 2.9+) ---
+try:
+    import torchaudio
+    if not hasattr(torchaudio, "AudioMetaData"):
+        from dataclasses import dataclass
+        @dataclass
+        class AudioMetaData:
+            sample_rate: int
+            num_frames: int
+            num_channels: int
+            bits_per_sample: int = 16
+            encoding: str = "PCM_S"
+        torchaudio.AudioMetaData = AudioMetaData
+    
+    if not hasattr(torchaudio, "list_audio_backends") or torchaudio.list_audio_backends is None:
+        torchaudio.list_audio_backends = lambda: ["ffmpeg"]
+    if not hasattr(torchaudio, "get_audio_backend") or torchaudio.get_audio_backend is None:
+        torchaudio.get_audio_backend = lambda: "ffmpeg"
+    if not hasattr(torchaudio, "set_audio_backend"):
+        torchaudio.set_audio_backend = lambda x: None
+
+    # --- Force torchaudio.save to use soundfile backend (bypass torchcodec) ---
+    # Newer torchaudio (2.10+) defaults to torchcodec which requires
+    # full-shared FFmpeg DLLs on Windows. Soundfile works everywhere.
+    try:
+        import soundfile as _sf
+        import torch as _torch
+        _orig_ta_save = torchaudio.save
+
+        def _soundfile_save(uri, src, sample_rate, **kwargs):
+            """Drop-in torchaudio.save that writes via soundfile."""
+            if isinstance(src, _torch.Tensor):
+                src = src.cpu()
+                if src.dim() == 2:
+                    src = src.t()  # (channels, samples) → (samples, channels)
+                src = src.numpy()
+            # use str conversion for Path objects
+            _sf.write(str(uri), src, sample_rate)
+
+        torchaudio.save = _soundfile_save
+    except Exception:
+        pass
+except ImportError:
+    pass
+
+# --- Torch 2.6+ WeightsOnly Serialization Fix ---
+try:
+    import torch
+    # Allow safe globals for omegaconf (used by pyannote/whisperx)
+    try:
+        from torch.serialization import add_safe_globals
+        import omegaconf
+        add_safe_globals([
+            omegaconf.listconfig.ListConfig,
+            omegaconf.dictconfig.DictConfig,
+            omegaconf.nodes.AnyNode,
+            omegaconf.nodes.ScalarNode,
+        ])
+    except Exception:
+        pass
+
+    _orig_torch_load = torch.load
+    def _patched_torch_load(*args, **kwargs):
+        # Force weights_only=False to support legacy models (pyannote/whisperx)
+        # on newer Torch versions that default to True or pass it explicitly.
+        if 'weights_only' in kwargs:
+            kwargs['weights_only'] = False
+        
+        # Also handle potential positional arguments in older torch versions
+        # if they start adding more, but normally it's (f, map_location, pickle_module, **kwargs)
+        # In modern torch, it's (f, map_location=None, pickle_module=None, *, weights_only=..., ...)
+        if len(args) > 2 and isinstance(args[2], bool):
+            # This is risky to patch positionally, so we just rely on kwargs for now
+            pass
+        
+        # If weights_only is not in kwargs, we can try to inject it if the version is high
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+            
+        return _orig_torch_load(*args, **kwargs)
+    torch.load = _patched_torch_load
+except Exception:
+    pass
 
 # ---------- Progress bar (tqdm) ----------
 try:
@@ -320,18 +449,13 @@ def _separate_vocals_demucs(src_path: str, model: str, device: str) -> str:
         except Exception:
             dev = "cpu"
 
-    # Find demucs binary relative to the current python interpreter
-    import sys
-    demucs_bin = os.path.join(os.path.dirname(sys.executable), "demucs")
-    if not os.path.exists(demucs_bin):
-        import shutil
-        demucs_bin = shutil.which("demucs") or "demucs"
-
     # Demucs writes to ./separated/{model}/{basename}/vocals.wav
     # We send output to a temp dir so we can locate it deterministically.
     outdir = tempfile.mkdtemp(prefix="demucs_")
+    # Use wrapper script that patches torchaudio.save before running demucs
+    _runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_demucs_runner.py")
     cmd = [
-        demucs_bin,
+        sys.executable, _runner,
         "-n", model,
         "-d", dev,
         "--two-stems", "vocals",
@@ -340,8 +464,8 @@ def _separate_vocals_demucs(src_path: str, model: str, device: str) -> str:
     ]
     try:
         subprocess.run(cmd, check=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        raise SystemExit(f"demucs is not installed or not in PATH ({demucs_bin}). Install with: pip install demucs")
+    except FileNotFoundError:
+        raise SystemExit("demucs is not installed in this environment. Install with: pip install demucs")
     except subprocess.CalledProcessError as e:
         raise SystemExit(f"Demucs failed (code {e.returncode}). Try a different model or device.")
 
@@ -352,6 +476,7 @@ def _separate_vocals_demucs(src_path: str, model: str, device: str) -> str:
     if not matches:
         raise SystemExit(f"Demucs finished but no vocals.wav found at {pattern}")
     return matches[0]
+
 # ---------- Text utils ----------
 
 def normalize_text(s: str) -> str:
@@ -2548,6 +2673,8 @@ def build_title_ass(
 
 
 
+import json
+
 def save_words_json(words: List[Word], path: str):
     data = [asdict(w) for w in words]
     with open(path, 'w', encoding='utf-8') as f:
@@ -2558,7 +2685,10 @@ def load_words_json(path: str) -> List[Word]:
         return []
     with open(path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    return [Word(**d) for d in data]
+    
+    # Handle both old array format and new dict format with "words" key
+    words_data = data["words"] if isinstance(data, dict) and "words" in data else data
+    return [Word(**d) for d in words_data]
 
 def build_karaoke_ass(
     words: List[Word],

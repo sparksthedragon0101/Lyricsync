@@ -23,7 +23,12 @@ class GenRequest(BaseModel):
     num_images: int = 1
     loras: List[LoRASpec] = []
     precision: PrecisionT = "fp16"
+    vae_id: Optional[str] = None
+    text_encoder_id: Optional[str] = None
     style: Optional[str] = None
+    sub_style: Optional[str] = None
+    enable_refinement: bool = False
+    refinement_strength: float = 0.75
     model_config = {"protected_namespaces": ()}
 
 

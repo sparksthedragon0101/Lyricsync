@@ -38,6 +38,14 @@ class JobManager:
         proc.wait()
         if logf:
             logf.close()
+        with self._lock:
+            self._jobs.pop(key, None)
+
+    def register_job(self, slug: str, job_name: str, proc: subprocess.Popen, logf: Any = None):
+        """Manually register an externally managed process."""
+        key = (slug, job_name)
+        with self._lock:
+            self._jobs[key] = (proc, logf)
 
     def status(self, slug: str, job_name: str):
         key = (slug, job_name)

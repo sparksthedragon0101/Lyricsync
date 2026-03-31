@@ -23,7 +23,7 @@
     txt = txt.replace(/\[?\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b\]?/g, "");
     txt = txt
       .split("\n")
-      .filter(l => !/^\s*\[(?:verse|chorus|bridge|pre-chorus|post-chorus|intro|outro|hook|refrain|break|solo)[^\]]*\]\s*$/i.test(l))
+      .filter(l => !/^\s*\[(?:verse|chorus|bridge|pre-chorus|post-chorus|intro|outro|hook|refrain|break|solo|final|segment|instrumental)[^\]]*\]\s*$/i.test(l))
       .filter(l => !/^(you might also like|embed|see lyrics)/i.test(l.trim()))
       .map(s => s.trim())
       .join("\n");
@@ -59,7 +59,7 @@
 
     let currentSlug = null;
 
-    function show(slug) {
+    async function show(slug) {
       currentSlug = slug || pageSlug || null;
       modal.style.display = "flex";
       if (statusEl) {
@@ -67,6 +67,21 @@
           ? `Target: ${currentSlug}`
           : "Paste target not set";
       }
+      
+      // Auto-fetch story mode status if we have a slug
+      if (currentSlug) {
+        try {
+          const res = await fetch(`/api/projects/${currentSlug}`);
+          if (res.ok) {
+            const meta = await res.json();
+            const storyCheck = document.getElementById("pl-is-story");
+            if (storyCheck) storyCheck.checked = !!meta.is_story;
+          }
+        } catch (err) {
+          console.warn("Could not fetch project meta for story check:", err);
+        }
+      }
+
       if (rawEl && rawEl.value == null) rawEl.value = "";
       if (cleanEl && cleanEl.value == null) cleanEl.value = "";
     }
@@ -100,6 +115,8 @@
 
     function doPreview() {
       if (cleanEl && rawEl) {
+        // We don't have the sophisticated server-side chunker here, 
+        // but we can at least show the basic cleaning.
         cleanEl.value = window.clientCleanLyrics(rawEl.value);
       }
     }
@@ -121,6 +138,7 @@
         const payload = {
           text: rawEl?.value || "",
           also_official: !!alsoOfficialEl?.checked,
+          is_story: !!document.getElementById("pl-is-story")?.checked
         };
         const res = await ensurePost(`/api/projects/${currentSlug}/paste_lyrics`, payload);
         if (res?.ok) {

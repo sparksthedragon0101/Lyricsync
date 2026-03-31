@@ -1,7 +1,11 @@
 
 import os
+import asyncio
 import re
-import json
+import orjson
+import aiofiles
+import textwrap
+
 import socket
 import logging
 import shlex
@@ -17,16 +21,12 @@ import warnings
 # Suppress benign warning from diffusers when offloading float16 models to CPU
 warnings.filterwarnings("ignore", message=".*Pipelines loaded with `dtype=torch.float16` cannot run with `cpu` device.*")
 
-from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Response, Body
+from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException, Response, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from .server.routers import llm_router
-from .server.routers import effects_router
-from .server.routers import fonts_router
-from .server.routers import themes_router
 from .server.core.paths import (
     GLOBAL_FONTS_DIR,
     PROJECTS_ROOT,
@@ -36,6 +36,10 @@ from .server.core.paths import (
     ENV_FILE_PATH,
     write_env_file,
 )
+from .server.routers import llm_router
+from .server.routers import effects_router
+from .server.routers import fonts_router
+from .server.routers import themes_router
 from .server.core.llm_client import OllamaProvider
 from api.api_images import router as image_router
 from api.api_models import router as models_router
@@ -138,52 +142,18 @@ if not LYRICSYNC_PATH.exists():
     LYRICSYNC_PATH = (ROOT_DIR / "lyricsync.py").resolve()
 ARCHIVES_DIR = ROOT_DIR / "archives"
 SECTION_TAGS = re.compile(
-    r'^\s*\[(?:verse|chorus|bridge|pre-chorus|post-chorus|intro|outro|hook|refrain|break|solo)(?:[^\]]*)\]\s*$',
+    r'^\s*\[(?:verse|chorus|bridge|pre-chorus|post-chorus|intro|outro|hook|refrain|break|solo|final|segment|instrumental)(?:[^\]]*)\]\s*$',
     flags=re.IGNORECASE
 )
 TIMECODES = re.compile(r'\[?\b\d{1,2}:\d{2}(?:\.\d{1,3})?\b\]?')  # [01:23], 1:23.456, 00:59
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(name)s: %(message)s")
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+VIDEO_EXTS = {".mp4", ".mkv"}
+VISUAL_EXTS = IMAGE_EXTS | VIDEO_EXTS
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 _ollama_client = OllamaProvider(base_url=OLLAMA_BASE_URL)
-STYLE_HINTS = {
-    "photorealistic": "photorealistic, detailed photography with lifelike lighting",
-    "stylized": "stylized concept art with painterly brush strokes",
-    "anime": "anime illustration with cel shading and bold lighting",
-    "animated": "animated work, 2d hand-drawn aesthetic, vibrant colors, expressive",
-    "landscape": "epic wide environmental landscape shot with sweeping vistas",
-}
-
-SUB_STYLE_HINTS = {
-    "generic": "stylized concept art, digital painting, highly detailed, evocative composition",
-    "pixel_art": "Strictly pixel art, 16-bit retro game style, blocky, low-res aesthetic, sharp edges. Do NOT use brush strokes, blurring, or painterly terms.",
-    "3d_render": "3D CGI render, Octane render, digital art, ray-traced, sharp focus, Unreal Engine 5 style, hyper-realistic materials.",
-    "surrealist": "Surrealist art, dreamlike, Salvador Dali style, impossible geometry, melting forms, strange, ethereal, psychological horror elements.",
-    # Anime Decades
-    "anime_80s": "1980s cel-shaded anime style, retro aesthetic, grain, hand-drawn animation, detailed mechanical designs, vintage color palette",
-    "anime_90s": "1990s anime aesthetic, golden age style, detailed cel shading, atmospheric lighting, hand-drawn nostalgic feel",
-    "anime_00s": "early 2000s digital anime style, sharp lines, experimental coloring, transition era aesthetic",
-    # Anime Studios
-    "anime_ghibli": "Studio Ghibli style, Hayao Miyazaki, hand-painted backgrounds, lush nature, soft wind, whimsical, detailed clouds, watercolor aesthetic",
-    "anime_mappa": "MAPPA studio style, high contrast, dynamic camera angles, detailed particle effects, modern clean lines, cinematic lighting",
-    "anime_trigger": "Studio Trigger style, hyper-dynamic, neon accents, sharp geometric shapes, exaggerated perspective, vibrant and poppy colors",
-    "anime_kyoani": "Kyoto Animation style, KyoAni, moist eyes, incredibly detailed hair, soft lighting, emotional atmosphere, high production value",
-    "anime_ufotable": "Ufotable style, digital compositing, intense particle effects, deep colors, cinematic depth of field, high-budget visual fidelity",
-    "anime_madhouse": "Madhouse studio style, dark and gritty, detailed linework, mature aesthetic, dramatic shadows, high frame-rate feel",
-    "anime_sunrise": "Sunrise/Bandai style, mecha aesthetic, detailed mechanical shading, epic scale, space opera vibes, dramatic posing",
-    "anime_shaft": "Studio Shaft style, Shinbo Akiyuki, head tilts, abstract backgrounds, avant-garde composition, text overlays, minimal but striking colors",
-    # Western Animation
-    "anim_looney": "classic looney tunes style, hand-painted backgrounds, slapstick energy, exaggerated features, golden age animation",
-    "anim_disney": "classic disney animation style, 1950s hand-drawn, rich technicolor, fluid movement, fairytale aesthetic",
-    "anim_simpsons": "simpsons style, matt groening, flat colors, yellow skin, simple distinct outlines, satirical cartoon aesthetic",
-    "anim_southpark": "south park style, construction paper cutout aesthetic, geometric simplicity, textured paper look, stop-motion feel",
-    "anim_nickelodeon": "classic 90s nickelodeon cartoon style, rugrats/ren&stimpy aesthetic, squiggly lines, wacky color palettes, offbeat character designs",
-    "anim_cel": "traditional 2d cel animation, ink and paint, hand-drawn, authentic animation cells, vintage aesthetic",
-    "anim_digital": "modern digital 2d animation, clean vector lines, flash animation style, crisp colors, smooth tweening",
-    "anim_clay": "claymation style, ardman/laika aesthetic, plasticine texture, visible fingerprints, studio lighting, miniature set",
-    "anim_cutout": "cutout stop-motion, terry gilliam style, collage aesthetic, rough edges, disjointed movement feel",
-    "anim_rotoscope": "rotoscope animation, a scanner darkly style, traced realism, dreamlike movement, shifting lines, uncanny valley aesthetic"
-}
+from .projects import STYLE_HINTS, SUB_STYLE_HINTS
+PROJECT_LIST_CACHE = None
 PROJECTS_LOGGER = logging.getLogger("lyricsync.api.projects")
 def clean_lyrics(raw: str) -> str:
     # 1) Decode entities / normalize line endings
@@ -221,13 +191,97 @@ def clean_lyrics(raw: str) -> str:
 
     return txt
 
+def chunk_story_text(text: str, max_chars: int = 42, max_lines: int = 2) -> str:
+    """
+    Chunks a long story text into subtitle-friendly segments.
+    Targets 1-2 lines of ~42 characters each.
+    """
+    # 1. Normalize Whitespace & Newlines
+    # Join single newlines if they are likely wrapped lines in a paragraph
+    # (i.e., non-empty line followed by non-empty line)
+    text = re.sub(r'(?<=\S)\n(?=\S)', ' ', text)
+    # Collapse multiple spaces and handle dot-patterns
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\.\s*\.\s*\.', '...', text)
+    
+    # 2. Split into sentences (smarter regex)
+    # This regex tries to avoid splitting on abbreviations like Mr. or cs759.
+    # It looks for punctuation followed by space and a capital letter or start of string.
+    sentence_pattern = r'(?<=[.!?])\s+(?=[A-Z0-9])'
+    sentences = re.split(sentence_pattern, text.strip())
+    
+    all_chunks = []
+    current_lines = []
+
+    def add_to_chunks(line):
+        nonlocal current_lines
+        if len(current_lines) >= max_lines:
+            all_chunks.append("\n".join(current_lines))
+            current_lines = []
+        current_lines.append(line.strip())
+
+    for sent in sentences:
+        sent = sent.strip()
+        if not sent: continue
+
+        # If sentence fits in one line
+        if len(sent) <= max_chars:
+            add_to_chunks(sent)
+        else:
+            # If sentence fits in two lines
+            if len(sent) <= max_chars * max_lines:
+                # Try to find a good midpoint split (at punctuation or space)
+                split_at = _find_best_split_point(sent, max_chars)
+                if split_at != -1:
+                    add_to_chunks(sent[:split_at])
+                    add_to_chunks(sent[split_at:])
+                else:
+                    # Fallback to standard wrap
+                    for line in textwrap.wrap(sent, width=max_chars, break_long_words=False):
+                        add_to_chunks(line)
+            else:
+                # Long sentence (> 84 chars), recursive or iterative wrap
+                for line in textwrap.wrap(sent, width=max_chars, break_long_words=False):
+                    add_to_chunks(line)
+                    
+    # Flush remaining
+    if current_lines:
+        all_chunks.append("\n".join(current_lines))
+        
+    return "\n\n".join(all_chunks)
+
+def _find_best_split_point(text: str, max_chars: int) -> int:
+    """Finds a graceful split point near max_chars."""
+    # Preferred separators in order of quality
+    for sep in ["; ", ": ", ", ", " -- ", " - ", " "]:
+        # Search backwards from around the midpoint
+        mid = len(text) // 2
+        # Try to find the separator closest to midpoint, but within max_chars from start
+        best_loc = -1
+        last_found = -1
+        while True:
+            last_found = text.find(sep, last_found + 1)
+            if last_found == -1 or last_found >= len(text) - 1:
+                break
+            # Pick the one closest to midpoint if it's within limits
+            if last_found <= max_chars:
+                if best_loc == -1 or abs(last_found - mid) < abs(best_loc - mid):
+                    best_loc = last_found + len(sep)
+            else:
+                break
+        
+        if best_loc != -1:
+            return best_loc
+            
+    return -1
+
 class StoragePathRequest(BaseModel):
     kind: str
     path: str
 
 app = FastAPI(title="LyricSync Server")
-app.mount("/static", StaticFiles(directory=str((BASE_DIR / "Static").resolve())), name="static")
-templates = Jinja2Templates(directory=str((BASE_DIR / "Templates").resolve()))
+app.mount("/static", StaticFiles(directory=str((BASE_DIR / "static").resolve())), name="static")
+templates = Jinja2Templates(directory=str((BASE_DIR / "templates").resolve()))
 
 projects = Projects(PROJECTS_ROOT)
 jobs = JobManager(base_logs=PROJECTS_ROOT)
@@ -260,19 +314,53 @@ async def _create_project_response(
     cover: Optional[UploadFile],
     lyrics_txt: Optional[UploadFile],
     lyrics_srt: Optional[UploadFile],
+    is_story: bool = False,
 ):
     slug = slugify(name)
+    global PROJECT_LIST_CACHE
+    PROJECT_LIST_CACHE = None
+
     PROJECTS_LOGGER.info(
-        "Creating project '%s' via %s (accept=%s)",
+        "Creating project '%s' via %s (accept=%s, is_story=%s)",
         slug,
         request.url.path,
         request.headers.get("accept"),
+        is_story,
     )
     p = projects.create(slug)
+    
+    # Save project config/metadata
+    config_path = p.dir / "project_config.json"
+    config_data = {"is_story": is_story, "created_at": datetime.now().isoformat()}
+    config_path.write_bytes(orjson.dumps(config_data, option=orjson.OPT_INDENT_2))
+
     audio_path = projects.save_upload(p, audio, "audio")
     cover_path = projects.save_upload(p, cover, "cover") if cover else None
-    txt_path = projects.save_upload(p, lyrics_txt, "official_lyrics.txt") if lyrics_txt else None
+    
+    # If it's a story, we might want to chunk the text immediately if uploaded
+    if is_story and lyrics_txt:
+        # We'll handle chunking after the initial save_upload for simplicity
+        txt_path = projects.save_upload(p, lyrics_txt, "official_lyrics.txt")
+        try:
+            raw_text = txt_path.read_text(encoding="utf-8")
+            chunked = chunk_story_text(raw_text)
+            txt_path.write_text(chunked, encoding="utf-8")
+            PROJECTS_LOGGER.info("Auto-chunked uploaded story text for project: %s", slug)
+        except Exception as e:
+            PROJECTS_LOGGER.warning("Failed to auto-chunk uploaded story: %s", e)
+    else:
+        txt_path = projects.save_upload(p, lyrics_txt, "official_lyrics.txt") if lyrics_txt else None
+
     srt_path = projects.save_upload(p, lyrics_srt, "aligned.srt") if lyrics_srt else None
+
+    # Auto-seed title if missing from metadata
+    try:
+        current_meta = get_audio_metadata(p)
+        if not current_meta.get("title"):
+            set_audio_metadata(p, name)
+            PROJECTS_LOGGER.info("Seeded missing audio title with project name: %s", name)
+    except Exception as e:
+        PROJECTS_LOGGER.warning("Failed to auto-seed audio title: %s", e)
 
     if _should_redirect_to_project(request):
         return RedirectResponse(url=f"/projects/{slug}", status_code=303)
@@ -312,6 +400,7 @@ async def api_create_project_legacy(request: Request):
     cover = form.get("cover")
     lyrics_txt = form.get("lyrics_txt")
     lyrics_srt = form.get("lyrics_srt")
+    is_story = bool(form.get("is_story", False))
 
     PROJECTS_LOGGER.warning("Legacy /api/projects/create was called; forwarding to /api/projects.")
 
@@ -322,6 +411,7 @@ async def api_create_project_legacy(request: Request):
         cover=cover if isinstance(cover, UploadFile) else None,
         lyrics_txt=lyrics_txt if isinstance(lyrics_txt, UploadFile) else None,
         lyrics_srt=lyrics_srt if isinstance(lyrics_srt, UploadFile) else None,
+        is_story=is_story,
     )
 
 @app.post("/api/projects/{slug}/paste_lyrics")
@@ -329,26 +419,48 @@ async def api_paste_lyrics(slug: str, request: Request):
     """
     Accept raw lyrics from the UI, auto-clean them, and save as edited.txt.
     Optional JSON:
-      { "text": "...", "also_official": true }  -> also writes official_lyrics.txt
+      { "text": "...", "also_official": true, "is_story": bool }
     """
-    p = projects.get(slug)  # same pattern as other endpoints
+    p = projects.get(slug)
     data = await request.json()
     raw_text = (data or {}).get("text", "")
     also_official = bool((data or {}).get("also_official", False))
+    
+    # Check if project is story mode (either from payload or from config)
+    is_story = (data or {}).get("is_story")
+    if is_story is None:
+        # fallback to project config
+        config_path = p.dir / "project_config.json"
+        if config_path.exists():
+            try:
+                import orjson
+                config = orjson.loads(config_path.read_bytes())
+                is_story = config.get("is_story", False)
+            except:
+                is_story = False
+        else:
+            is_story = False
 
-    cleaned = clean_lyrics(raw_text)
+    if is_story:
+        cleaned = chunk_story_text(raw_text)
+    else:
+        cleaned = clean_lyrics(raw_text)
+
     out_txt = p.dir / "edited.txt"
-    out_txt.write_text(cleaned, encoding="utf-8")
+    async with aiofiles.open(out_txt, "w", encoding="utf-8") as f:
+        await f.write(cleaned)
 
     # optional: also update official_lyrics.txt if user asks
     if also_official:
-        (p.dir / "official_lyrics.txt").write_text(cleaned, encoding="utf-8")
+        async with aiofiles.open(p.dir / "official_lyrics.txt", "w", encoding="utf-8") as f:
+            await f.write(cleaned)
 
     return {
         "ok": True,
         "saved": str(out_txt.name),
         "bytes": len(cleaned.encode("utf-8")),
-        "also_official": also_official
+        "also_official": also_official,
+        "is_story": is_story
     }
 
 @app.get("/", response_class=HTMLResponse)
@@ -369,9 +481,8 @@ def dashboard_page(request: Request):
         "env_file": str(ENV_FILE_PATH),
     }
     return templates.TemplateResponse(
-        request=request,
-        name="dashboard.html",
-        context={"projects": projects.list_projects(), "storage_paths": storage_paths},
+        "dashboard.html",
+        {"request": request, "projects": projects.list_projects(), "storage_paths": storage_paths},
     )
     
 @app.get("/api/fonts")
@@ -433,8 +544,27 @@ def api_set_storage_paths(req: StoragePathRequest):
     
 @app.post("/api/system/reset")
 async def api_system_reset():
-    """Triggers a forced cleanup of VRAM and worker state."""
+    """Triggers a forced cleanup of VRAM, worker state, and internal caches."""
+    global PROJECT_LIST_CACHE
+    PROJECT_LIST_CACHE = None
+    
+    # 1. Reset Image Worker (unloads models and clears JOBS)
     result = await force_reset_worker()
+
+    # 2. Unload Ollama models if applicable
+    try:
+        # We use a fresh provider instance to trigger unloads
+        from .server.core.llm_client import OllamaProvider
+        ollama = OllamaProvider(base_url=OLLAMA_BASE_URL)
+        # Note: list_models might be slow, but it's a reset operation
+        models = ollama.list_models()
+        for m in models:
+            ollama.unload(m)
+        if models:
+            result["llm_models_unloaded"] = models
+    except Exception as e:
+        PROJECTS_LOGGER.warning("Failed to unload LLM models during reset: %s", e)
+
     return {"ok": True, "details": result}
 
 
@@ -445,11 +575,7 @@ def project_page(request: Request, slug: str):
     except ProjectNotFound:
         raise HTTPException(404, "Project not found")
     meta = projects.meta(slug)
-    return templates.TemplateResponse(
-        request=request,
-        name="project.html",
-        context={"p": p, "meta": meta, "has_lyricsync": LYRICSYNC_PATH.exists()}
-    )
+    return templates.TemplateResponse("project.html", {"request": request, "p": p, "meta": meta, "has_lyricsync": LYRICSYNC_PATH.exists()})
 
 @app.get("/projects/{slug}/edit", response_class=HTMLResponse)
 def editor_page(request: Request, slug: str):
@@ -457,15 +583,73 @@ def editor_page(request: Request, slug: str):
         p = projects.get(slug)
     except ProjectNotFound:
         raise HTTPException(404, "Project not found")
-    return templates.TemplateResponse(
-        request=request,
-        name="editor.html",
-        context={"p": p}
-    )
+    return templates.TemplateResponse("editor.html", {"request": request, "p": p})
 
 @app.get("/api/projects")
 def api_list_projects():
-    return {"projects": projects.list_projects()}
+    global PROJECT_LIST_CACHE
+    if PROJECT_LIST_CACHE is None:
+        PROJECT_LIST_CACHE = projects.list_projects()
+    return {"projects": PROJECT_LIST_CACHE}
+
+@app.websocket("/ws/logs/{slug}/{job_name}")
+async def ws_project_logs(websocket: WebSocket, slug: str, job_name: str):
+    await websocket.accept()
+    try:
+        p = projects.get(slug)
+    except Exception:
+        await websocket.close(code=1008)  # Policy violation (not found)
+        return
+        
+    # If the job_name includes the slug prefix (e.g. "slug:render"), strip it
+    # so we find the actual file on disk (e.g. "render.log")
+    prefix = f"{slug}:"
+    if job_name.startswith(prefix):
+        job_name = job_name[len(prefix):]
+
+    log_file = p.logs_dir / f"{job_name}.log"
+    # Wait for file to exist if job just started
+    for _ in range(60): 
+        if log_file.exists(): break
+        await asyncio.sleep(0.5)
+        
+    if not log_file.exists():
+        await websocket.send_text("[Info] Log file not created yet.")
+        await websocket.close()
+        return
+
+    try:
+        async with aiofiles.open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            # First, read existing content
+            content = await f.read()
+            if content:
+                await websocket.send_text(content)
+            
+            # Tail loop
+            while True:
+                line = await f.read()
+                if line:
+                    await websocket.send_text(line)
+                else:
+                    # Check if job is still running
+                    status = jobs.status(slug, job_name)
+                    if not status.get("running", True): 
+                        # One final check for output
+                        line = await f.read()
+                        if line: await websocket.send_text(line)
+                        break
+                    await asyncio.sleep(0.5)
+        
+        await websocket.send_text("\n[Complete]")
+        await websocket.close()
+    except Exception as e:
+        # Client disconnected or file error
+        print(f"WS Error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
+
 
 @app.post("/api/projects")
 async def api_create_project(
@@ -475,6 +659,7 @@ async def api_create_project(
     cover: Optional[UploadFile] = File(None),
     lyrics_txt: Optional[UploadFile] = File(None),
     lyrics_srt: Optional[UploadFile] = File(None),
+    is_story: bool = Form(False),
 ):
     return await _create_project_response(
         request=request,
@@ -483,6 +668,7 @@ async def api_create_project(
         cover=cover,
         lyrics_txt=lyrics_txt,
         lyrics_srt=lyrics_srt,
+        is_story=is_story,
     )
 
 @app.get("/api/projects/{slug}")
@@ -494,7 +680,7 @@ def api_project(slug: str):
     return projects.meta(slug)
 
 @app.get("/api/projects/{slug}/audio")
-def api_audio(slug: str):
+def api_audio(slug: str, force_cbr: bool = False):
     p = projects.get(slug)
     audio_path = p.audio  # may be a dir or a file depending on Projects implementation
 
@@ -520,6 +706,37 @@ def api_audio(slug: str):
     if not chosen or not chosen.exists() or chosen.stat().st_size == 0:
         raise HTTPException(404, "No usable audio file found. Put a media file in the project's audio folder.")
 
+    if force_cbr:
+        # Create a seekable CBR version for the editor if it doesn't exist
+        cbr_path = p.dir / "audio_cbr.mp3"
+        if not cbr_path.exists() or cbr_path.stat().st_mtime < chosen.stat().st_mtime:
+            PROJECTS_LOGGER.info(f"Transcoding {chosen.name} to CBR for project {slug}")
+            try:
+                import subprocess
+                import tempfile
+                # -b:a 192k for CBR, -y to overwrite
+                # -write_xing 0 is KEY: it prevents the VBR-style Xing/Info header in CBR files, 
+                # which fixes many seeking inaccuracies in browser media engines (like Chrome/Opera).
+                with tempfile.NamedTemporaryFile(dir=str(p.dir), delete=False, suffix=".mp3") as tmp:
+                    tmp_path = tmp.name
+                
+                cmd = [
+                    "ffmpeg", "-y", "-i", str(chosen),
+                    "-codec:a", "libmp3lame", "-b:a", "192k",
+                    "-write_xing", "0",
+                    "-id3v2_version", "3",
+                    "-map_metadata", "0",
+                    str(tmp_path)
+                ]
+                subprocess.run(cmd, check=True, capture_output=True)
+                os.replace(tmp_path, str(cbr_path))
+            except Exception as e:
+                PROJECTS_LOGGER.error(f"Transcode failed: {e}")
+                # Fallback to original
+                pass
+            else:
+                chosen = cbr_path
+
     media_type = "audio/mpeg" if chosen.suffix.lower() == ".mp3" else "application/octet-stream"
     return FileResponse(str(chosen), media_type=media_type)
 
@@ -535,7 +752,19 @@ def api_download(slug: str, path: str):
         raise HTTPException(400, "Invalid path")
     if not target.exists():
         raise HTTPException(404, "File missing")
-    return FileResponse(str(target))
+
+    # Explicitly guess mime type to help the browser video player
+    import mimetypes
+    media_type, _ = mimetypes.guess_type(target.name)
+    if not media_type:
+        media_type = "application/octet-stream"
+
+    return FileResponse(
+        str(target), 
+        media_type=media_type, 
+        filename=target.name,
+        content_disposition_type="inline"
+    )
     
 @app.head("/api/projects/{slug}/download/{path:path}")
 def head_download(slug: str, path: str):
@@ -575,7 +804,7 @@ def _list_project_images(p, limit: int | None = None) -> List[Path]:
         return []
     files = [
         f for f in images_dir.iterdir()
-        if f.is_file() and f.suffix.lower() in IMAGE_EXTS
+        if f.is_file() and f.suffix.lower() in VISUAL_EXTS
     ]
     files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
     if limit is not None:
@@ -584,7 +813,7 @@ def _list_project_images(p, limit: int | None = None) -> List[Path]:
 
 
 def _selected_images_path(p) -> Path:
-    return p.dir / "images" / ".selection.json"
+    return p.dir / "image_selection.json"
 
 
 def _get_selected_images(p) -> List[Path]:
@@ -592,11 +821,20 @@ def _get_selected_images(p) -> List[Path]:
     if not sel_file.exists():
         return []
     try:
-        data = json.loads(sel_file.read_text(encoding="utf-8"))
+        data = orjson.loads(sel_file.read_bytes())
     except Exception:
         return []
     out: List[Path] = []
-    for rel in data if isinstance(data, list) else []:
+    
+    # Handle the dict format {"selection": [...]} saved by projects.py
+    if isinstance(data, dict):
+        paths = data.get("selection", [])
+    elif isinstance(data, list):
+        paths = data
+    else:
+        paths = []
+        
+    for rel in paths:
         rel = str(rel)
         if not rel:
             continue
@@ -623,10 +861,10 @@ def _set_selected_images(p, rel_paths: List[str]) -> List[str]:
             cand.relative_to(p.dir)
         except ValueError:
             continue
-        if not cand.exists() or cand.suffix.lower() not in IMAGE_EXTS:
+        if not cand.exists() or cand.suffix.lower() not in VISUAL_EXTS:
             continue
         valid.append(rel)
-    sel_file.write_text(json.dumps(valid, indent=2), encoding="utf-8")
+    sel_file.write_bytes(orjson.dumps(valid, option=orjson.OPT_INDENT_2))
     return valid
 
 
@@ -643,13 +881,15 @@ class ModelDirRequest(BaseModel):
     path: str
 
 
-def _read_lyrics_for_prompt(p) -> str:
+async def _read_lyrics_for_prompt(p) -> str:
     if not p.official_txt.exists():
         raise HTTPException(400, "official_lyrics.txt is missing for this project.")
     try:
-        txt = p.official_txt.read_text(encoding="utf-8")
+        async with aiofiles.open(p.official_txt, "r", encoding="utf-8") as f:
+            txt = await f.read()
     except UnicodeDecodeError:
-        txt = p.official_txt.read_text(encoding="latin-1", errors="ignore")
+        async with aiofiles.open(p.official_txt, "r", encoding="latin-1", errors="ignore") as f:
+            txt = await f.read()
     lyrics = txt.strip()
     if not lyrics:
         raise HTTPException(400, "official_lyrics.txt is empty.")
@@ -675,7 +915,7 @@ def _parse_prompt_response(payload: str) -> tuple[str, str]:
     if json_start != -1 and json_end != -1 and json_end > json_start:
         candidate = clean_payload[json_start : json_end + 1]
         try:
-            data = json.loads(candidate)
+            data = orjson.loads(candidate)
             positive = str(data.get("positive", "")).strip()
             negative = str(data.get("negative", "")).strip()
         except Exception:
@@ -684,7 +924,7 @@ def _parse_prompt_response(payload: str) -> tuple[str, str]:
     # 3. If standard JSON extraction failed, try the original full payload
     if not positive:
         try:
-            data = json.loads(clean_payload)
+            data = orjson.loads(clean_payload)
             positive = str(data.get("positive", "")).strip()
             negative = str(data.get("negative", "")).strip()
         except Exception:
@@ -761,9 +1001,13 @@ def _normalize_story_slots(raw: Any) -> List[Dict[str, Any]]:
 
 @app.get("/api/ollama/models")
 def api_ollama_models():
-    url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/tags"
+    base = OLLAMA_BASE_URL.rstrip('/')
+    if not base.startswith("http"):
+        base = f"http://{base}"
+    url = f"{base}/api/tags"
+    
     try:
-        resp = httpx.get(url, timeout=5)
+        resp = httpx.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         models = []
@@ -772,30 +1016,18 @@ def api_ollama_models():
             if name:
                 models.append(name)
     except Exception as exc:
-        logging.warning("Failed to query Ollama models: %s", exc)
+        logging.warning("Failed to query Ollama models at %s: %s", url, exc)
         models = []
     return {"models": models}
 
 
-@app.get("/api/models/directory")
-def api_models_directory():
-    path = model_registry.get_models_dir()
-    return {"path": str(path) if path else None}
 
-
-@app.post("/api/models/directory")
-def api_set_models_directory(req: ModelDirRequest):
-    target = Path(req.path).expanduser()
-    if not target.exists() or not target.is_dir():
-        raise HTTPException(400, "Directory does not exist")
-    model_registry.set_models_dir(str(target))
-    return {"ok": True, "path": str(target)}
 
 
 @app.post("/api/projects/{slug}/image_prompt")
-def api_image_prompt(slug: str, req: ImagePromptRequest):
+async def api_image_prompt(slug: str, req: ImagePromptRequest):
     p = projects.get(slug)
-    lyrics = _read_lyrics_for_prompt(p)
+    lyrics = await _read_lyrics_for_prompt(p)
     style_key = (req.style or "photorealistic").strip().lower()
     style_instruction = STYLE_HINTS.get(style_key, style_key or "photorealistic")
     
@@ -937,7 +1169,7 @@ def api_cover_from_image(slug: str, req: ImagePathRequest):
         raise HTTPException(400, "Invalid image path")
     if not target.exists():
         raise HTTPException(404, "Image not found")
-    if target.suffix.lower() not in IMAGE_EXTS:
+    if target.suffix.lower() not in VISUAL_EXTS:
         raise HTTPException(400, "File is not an image")
     p.cover.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(target, p.cover)
@@ -955,7 +1187,7 @@ def api_delete_project_image(slug: str, req: ImagePathRequest):
         raise HTTPException(400, "Invalid image path")
     if not target.exists():
         raise HTTPException(404, "Image not found")
-    if target.suffix.lower() not in IMAGE_EXTS:
+    if target.suffix.lower() not in VISUAL_EXTS:
         raise HTTPException(400, "File is not an image")
     try:
         target.unlink()
@@ -1009,7 +1241,7 @@ async def api_upload_images(slug: str, files: List[UploadFile] = File(...)):
             errors.append("Unnamed file skipped")
             continue
         ext = Path(filename).suffix.lower()
-        if ext not in IMAGE_EXTS:
+        if ext not in VISUAL_EXTS:
             errors.append(f"{filename}: unsupported type")
             continue
         stem = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(filename).stem).strip("-._") or "image"
@@ -1142,7 +1374,7 @@ async def api_upload_cover(slug: str, cover: UploadFile = File(...)):
         raise HTTPException(400, "No file uploaded")
 
     ext = os.path.splitext(cover.filename)[1].lower()
-    if ext and ext not in IMAGE_EXTS:
+    if ext and ext not in VISUAL_EXTS:
         raise HTTPException(400, "Unsupported image type. Use PNG, JPG, WEBP, or BMP.")
 
     saved = projects.save_upload(p, cover, "cover")
@@ -1186,48 +1418,100 @@ def api_get_timing(slug: str):
         try:
             import json
             words_data = json.loads(words_path.read_text(encoding="utf-8"))
-            if isinstance(words_data, list):
+            if isinstance(words_data, dict):
+                words_list = words_data.get("words", [])
+            else:
+                words_list = words_data
+
+            if isinstance(words_list, list):
                 # Efficiently assign words to segments based on overlap
                 # Sort words by start time
-                words_data.sort(key=lambda w: w.get("start", 0))
+                words_list.sort(key=lambda w: w.get("start", 0))
                 
+                # Track assigned words to rescue orphans later
+                # We'll stick a temporary property on the dict objects or use a set of IDs if they had them
+                # Since they are dicts, we can't hash them easily without IDs. 
+                # Let's use object identity or just a set of indices.
+                assigned_indices = set()
+
                 w_idx = 0
-                n_words = len(words_data)
+                n_words = len(words_list)
                 
+                # 1. First pass: Assign based on overlap (strict)
                 for seg in data.get("segments", []):
                     seg_start = seg.get("start", 0)
                     seg_end = seg.get("end", 0)
                     seg_words = []
                     
-                    # Advance w_idx to start of segment (with 1.0s buffer to be safe)
-                    while w_idx < n_words and words_data[w_idx].get("end", 0) < seg_start - 1.0:
+                    # Advance w_idx to start of segment (with 1.0s buffer)
+                    # We reset/scan from a safe previous position? No, linear scan is fine if sorted.
+                    # Actually, if we want to be safe with overlaps, we shouldn't skip too aggressively.
+                    # But wait, we iterate segments in order? Usually yes.
+                    
+                    # Let's just iterate all words for each segment? No, O(N*M).
+                    # Windowed is better.
+                    
+                    # Reset window for safety? Simple window approach:
+                    # Find first word that ends > seg_start
+                    while w_idx < n_words and words_list[w_idx].get("end", 0) < seg_start - 1.0:
                         w_idx += 1
                         
-                    # Collect overlapping words
                     temp_idx = w_idx
                     while temp_idx < n_words:
-                        w = words_data[temp_idx]
+                        w = words_list[temp_idx]
                         if w.get("start", 0) > seg_end + 1.0:
                             break
                         
-                        # Overlap check
                         overlap_start = max(seg_start, w.get("start", 0))
                         overlap_end = min(seg_end, w.get("end", 0))
                         
                         if overlap_end > overlap_start:
-                             # It physically overlaps. 
-                             # We could check if > 50% of the word is inside, but simplest is any overlap?
-                             # Or use the center point. 
-                             mid = (w.get("start",0) + w.get("end",0)) / 2
-                             if seg_start <= mid <= seg_end:
-                                 seg_words.append(w)
-                             elif overlap_end - overlap_start > 0.1: # Significant overlap
-                                 seg_words.append(w)
+                             # Overlaps
+                             if temp_idx not in assigned_indices:
+                                seg_words.append(w)
+                                assigned_indices.add(temp_idx)
+                             # Note: If a word overlaps two segments, we claim it for the first one only?
+                             # Or we could let it be in both? The editor might duplicate it.
+                             # Let's claim it for the first one for now (greedy).
 
                         temp_idx += 1
                     
                     if seg_words:
                         seg["words"] = seg_words
+
+                # 2. Second pass: Rescue orphans
+                # For any word not in assigned_indices, find the nearest segment
+                orphans = [words_list[i] for i in range(n_words) if i not in assigned_indices]
+                if orphans:
+                    segments = data.get("segments", [])
+                    if segments:
+                        for w in orphans:
+                            w_mid = (w.get("start", 0) + w.get("end", 0)) / 2
+                            # Find best segment (min distance to range)
+                            best_seg = None
+                            min_dist = float("inf")
+                            
+                            for seg in segments:
+                                s_start = seg.get("start", 0)
+                                s_end = seg.get("end", 0)
+                                if s_start <= w_mid <= s_end:
+                                    dist = 0 # Inside (should have been caught, but maybe micro-gap?)
+                                else:
+                                    dist = min(abs(w_mid - s_start), abs(w_mid - s_end))
+                                
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    best_seg = seg
+                            
+                            if best_seg is not None:
+                                if "words" not in best_seg:
+                                    best_seg["words"] = []
+                                best_seg["words"].append(w)
+
+                        # Re-sort words in all segments to ensure order
+                        for seg in segments:
+                            if "words" in seg:
+                                seg["words"].sort(key=lambda x: x.get("start", 0))
         except Exception as e:
             print(f"Error loading words.json: {e}")
 
@@ -1241,26 +1525,47 @@ async def api_save_timing(slug: str, request: Request):
     
     # Extract words to save to words.json
     all_words = []
+    found_any_word_key = False
     if isinstance(data, dict) and "segments" in data:
         for seg in data["segments"]:
             if "words" in seg and isinstance(seg["words"], list):
-                # We trust the frontend to provide valid word objects
+                found_any_word_key = True
                 all_words.extend(seg["words"])
-                # Remove words from timing.json to avoid duplication? 
-                # Or keep them for safety? 
-                # Let's remove them to keep timing.json clean and rely on words.json as SSOT for words.
-                # BUT: srt_json.save_project just dumps the dict.
-                # If we modify 'seg' here, we modify 'data'.
-                del seg["words"]
                 
-    # Sort words by time
-    all_words.sort(key=lambda w: w.get("start", 0))
-    
-    # Save words.json
-    words_path = p.dir / "words.json"
+    # Deduplicate words (overlapping segments can cause same word to be added twice)
     if all_words:
+        unique_words = []
+        seen_words = set()
+        for w in all_words:
+            # Key by start, end, and text
+            key = (w.get("start"), w.get("end"), w.get("text"))
+            if key not in seen_words:
+                unique_words.append(w)
+                seen_words.add(key)
+        all_words = unique_words
+        
+        # Save words.json with correct schema version for lyricsync.py
+        words_path = p.dir / "words.json"
         import json
-        words_path.write_text(json.dumps(all_words, indent=2), encoding="utf-8")
+        
+        # Hardcoded match for ALIGNMENT_VERSION = 4 to ensure compatibility
+        words_payload = {
+            "version": 4, 
+            "words": all_words
+        }
+        words_path.write_text(json.dumps(words_payload, indent=2), encoding="utf-8")
+        
+        # If we successfully saved words to words.json, we can strip them from timing.json
+        # to keep it clean and avoid duplication.
+        for seg in data["segments"]:
+            if "words" in seg:
+                del seg["words"]
+    elif found_any_word_key:
+        # Every segment had a 'words' key, but they were all empty?
+        # This might mean the user intentionally cleared all words.
+        # For safety, let's NOT deletewords.json yet unless we're sure.
+        pass
+
     
     # Save timing.json (segments only)
     json_path = p.dir / "timing.json"
@@ -1357,7 +1662,7 @@ async def api_align(
     engine = _cfg("engine", "whisperx")
     if engine not in ("whisperx", "mfa"):
         engine = "whisperx"
-    enable_word_highlight = bool(body.get("enable_word_highlight") or body.get("word_highlight"))
+    enable_word_highlight = bool(body.get("enable_word_highlight", True))
 
     # ---------- pick an actual audio file ----------
     audio_path = p.audio
@@ -1433,7 +1738,17 @@ async def api_align(
     full_cmd = [sys.executable, str(LYRICSYNC_PATH), *args]
 
     # ---------- log header ----------
-    with open(log_file, "a", encoding="utf-8") as lf:
+    # Rotate old log to align.old.log to ensure a fresh start for the UI log stream
+    if log_file.exists():
+        try:
+            old_log = log_file.with_suffix(".old.log")
+            if old_log.exists():
+                old_log.unlink()
+            log_file.rename(old_log)
+        except Exception:
+            pass
+
+    with open(log_file, "w", encoding="utf-8") as lf:
         lf.write("\n=== Align launch at {} ===\n".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         lf.write(f"[LyricSync] Project: {slug}\n")
         lf.write(f"[LyricSync] Audio:   {chosen_audio}\n")
@@ -1446,55 +1761,74 @@ async def api_align(
         lf.write("[LyricSync] Command:\n  " + " ".join(shlex.quote(str(x)) for x in full_cmd) + "\n")
         lf.flush()
 
-    # ---------- background runner + fallback if empty SRT ----------
-    def _run_and_maybe_fallback(cmd):
-        with open(log_file, "ab", buffering=0) as lf:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                cwd=str(p.dir),
-                text=True,
-            )
-            for line in proc.stdout:
-                lf.write(line.encode("utf-8", errors="ignore"))
-            ret = proc.wait()
-
-        # if success but SRT is empty → fallback once with segments
+    p_obj = {"proc": None}
+    def _run_and_maybe_fallback(cmd_to_run):
         try:
-            size = out_srt.stat().st_size if out_srt.exists() else 0
-        except Exception:
-            size = 0
-
-        if (ret == 0) and (size < 10):
-            with open(log_file, "a", encoding="utf-8") as lf:
-                lf.write("[LyricSync] Word alignment coverage too low; falling back to segment alignment.\n")
-                lf.flush()
-
-            cmd_fallback = list(cmd)
-            for i, v in enumerate(cmd_fallback):
-                if v == "--align-mode" and i + 1 < len(cmd_fallback):
-                    cmd_fallback[i + 1] = "segments"
-                    break
-
             with open(log_file, "ab", buffering=0) as lf:
-                proc2 = subprocess.Popen(
-                    cmd_fallback,
+                proc = subprocess.Popen(
+                    cmd_to_run,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    cwd=str(p.dir),
-                    text=True,
+                    cwd=str(p.dir)
                 )
-                for line in proc2.stdout:
-                    lf.write(line.encode("utf-8", errors="ignore"))
-                proc2.wait()
+                p_obj["proc"] = proc
+                jobs.register_job(slug, "align", proc)
+                
+                for chunk in iter(proc.stdout.readline, b""):
+                    lf.write(chunk)
+                ret = proc.wait()
 
-        with open(log_file, "a", encoding="utf-8") as lf:
-            final = out_srt.stat().st_size if out_srt.exists() else 0
-            lf.write(f"[Complete] SRT: {out_srt} ({final} bytes)\n")
+            # if success but SRT is empty -> fallback once with segments
+            try:
+                size = out_srt.stat().st_size if out_srt.exists() else 0
+            except Exception:
+                size = 0
+
+            if (ret == 0) and (size < 10):
+                with open(log_file, "a", encoding="utf-8") as lf:
+                    lf.write("[LyricSync] Word alignment coverage too low; falling back to segment alignment.\n")
+                    lf.flush()
+
+                cmd_fallback = list(cmd_to_run)
+                for i, v in enumerate(cmd_fallback):
+                    if v == "--align-mode" and i + 1 < len(cmd_fallback):
+                        cmd_fallback[i + 1] = "segments"
+                        break
+
+                with open(log_file, "ab", buffering=0) as lf:
+                    proc2 = subprocess.Popen(
+                        cmd_fallback,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        cwd=str(p.dir)
+                    )
+                    p_obj["proc"] = proc2
+                    jobs.register_job(slug, "align", proc2)
+                    for chunk in iter(proc2.stdout.readline, b""):
+                        lf.write(chunk)
+                    proc2.wait()
+
+            with open(log_file, "a", encoding="utf-8") as lf:
+                final = out_srt.stat().st_size if out_srt.exists() else 0
+                lf.write(f"\n[Complete] SRT: {out_srt} ({final} bytes)\n")
+
+        except Exception as e:
+            import traceback
+            error_msg = f"\n[LyricSync] Fatal error in alignment thread:\n{traceback.format_exc()}\n"
+            with open(log_file, "a", encoding="utf-8") as lf:
+                lf.write(error_msg)
+            print(error_msg) # also log to server console
 
     threading.Thread(target=_run_and_maybe_fallback, args=(full_cmd,), daemon=True).start()
-    return {"ok": True, "pid": os.getpid()}
+    
+    # Give a tiny bit of time for the thread to start the process so we can return the PID
+    import time
+    for _ in range(10): 
+        if p_obj["proc"] is not None:
+            break
+        time.sleep(0.05)
+        
+    return {"ok": True, "pid": p_obj["proc"].pid if p_obj["proc"] else os.getpid()}
 
 @app.post("/api/projects/{slug}/render")
 async def api_render(

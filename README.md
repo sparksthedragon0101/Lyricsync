@@ -1,12 +1,16 @@
 # Lyricsync
 **Lyricsync** is a tool for automating lyric syncing using VAD, WhisperX, and segment alignment. It includes both a CLI for batch processing and a Web UI for interactive editing.
 
+**Notice**
+- There is code in this repo for using Z-Image and Flux however I have not been able to test Flux due to a lack of VRAM and Z-Image is only producing static at this moment. I highly suggest using SD/SDXL for image generation. 
+
 ## Updates
-- Refactored so that it now works on Linux (Ubuntu Confirmed)
-- I have been working on word level timings, however in my testing Whisper is not very good at music and the timings vary wildly. I am exploring other options but for now the only thing I know to do is to go in an manually align them.
-- I will be pushing an update soon for the timing editor so that it can zoom in enough for the word level timings to be feasible.
-- I have toast messages for when generation starts and progress updates coming as soon as I stablize them.
-- I am working on getting ZImage Turbo and Flux to work but they are proving to be pretty challanging to get working correctly. 
+- **MFA**: Montreal Forced Aligner support for high-precision word-level timings.
+- **Improved UI Feedback**: Added stage-based toast notifications (Separating Vocals, Transcribing, Aligning) and improved progress tracking for background jobs.
+- **JSON Compatibility**: Optimized `words.json` handling to support both legacy and versioned (v4) formats.
+- **Ollama Integration**: Added support for local LLMs via Ollama for image prompt generation (configured via `.env`).
+- **Settings Persistence**: Unified web dashboard settings persistence and fixed UI synchronization issues (e.g., Ken Burns options visibility).
+- **Autostart**: Updated the autostart bat file for the Windows users. It should check for a .venv and dependencies and install them before starting the application now which should make it easier for non-technical users to get started.
 
 ## Features
 - **Auto VAD Logic**: Automatically retries transcription without VAD if quality is low.
@@ -17,7 +21,7 @@
     - **Multi-pass**: Automatically retries transcription to maximize accuracy for karaoke timing.
     - **Editor Support**: Timings can be fine-tuned in the web editor (Per-word Timing panel).
 - **Web Interface**: Interactive editor for fine-tuning lyrics and styles.
-- **Preview Generation**: Optional MP4 preview with burned-in subtitles.
+- **Preview Generation**: MP4 preview with burned-in subtitles and download link if you are working remotely.
   
 ## Installation
 
@@ -52,6 +56,14 @@
 
 3.  **Install FFmpeg:**
     Ensure `ffmpeg` and `ffprobe` are in your system PATH.
+
+4.  **LLM Configuration (Optional):**
+    To enable AI lyric polishing and image prompt generation, create a `.env` file in the `lyricsync_web/` directory:
+    ```bash
+    LLM_PROVIDER=ollama
+    OLLAMA_BASE_URL=http://127.0.0.1:11434
+    ```
+    Ensure [Ollama](https://ollama.ai/) is installed and running with your preferred model (e.g., `llama3`).
 
 ## Usage
 

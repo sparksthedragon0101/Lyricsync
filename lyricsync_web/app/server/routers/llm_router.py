@@ -3,8 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any
-from ..core.llm_client import LLMClient
+from ..core.llm_client import LLMClient, OllamaProvider
 from ..core.prompts import PROMPTS
+import httpx
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 _llm = LLMClient()
@@ -62,3 +63,24 @@ def api_llm_generate(req: GenerateRequest):
         model=resp.model,
         latency_ms=resp.latency_ms,
     )
+
+@router.get("/models")
+def get_models():
+    """Return available LLM models by querying the configured provider."""
+    if isinstance(_llm.provider, OllamaProvider):
+        try:
+            r = httpx.get(f"{_llm.provider.base_url}/api/tags", timeout=5.0)
+            r.raise_for_status()
+            data = r.json()
+            return {"models": [m["name"] for m in data.get("models", [])]}
+        except Exception as e:
+            return {"models": ["llama3", "mistral", "phi3"], "error": str(e)}
+    else:
+        try:
+            headers = {"Authorization": f"Bearer {_llm.provider.api_key}"}
+            r = httpx.get(f"{_llm.provider.base_url}/models", headers=headers, timeout=5.0)
+            r.raise_for_status()
+            data = r.json()
+            return {"models": [m["id"] for m in data.get("data", [])]}
+        except Exception as e:
+            return {"models": ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo"], "error": str(e)}

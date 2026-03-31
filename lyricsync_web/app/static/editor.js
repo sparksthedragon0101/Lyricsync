@@ -463,7 +463,7 @@ function cleanSrtText(txt) {
 // Editing helpers
 // ------------------------------
 function shiftFollowingSegments(startIndex, delta, durationLimit) {
-  if (!project?.segments?.length || !delta || delta <= 0) return;
+  if (!project?.segments?.length || Math.abs(delta) < TIME_EPS) return;
   for (let i = startIndex; i < project.segments.length; i++) {
     const seg = project.segments[i];
     if (!seg) continue;
@@ -472,8 +472,24 @@ function shiftFollowingSegments(startIndex, delta, durationLimit) {
     seg.start = roundTime(seg.start + delta);
     seg.end = roundTime(seg.end + delta);
 
+    // Shift words if they exist
+    if (Array.isArray(seg.words)) {
+      seg.words.forEach(w => {
+        w.start = roundTime(w.start + delta);
+        w.end = roundTime(w.end + delta);
+      });
+    }
+
     if (prev && seg.start < prev.end + TIME_EPS) {
-      seg.start = roundTime(prev.end + TIME_EPS);
+      const shift = (prev.end + TIME_EPS) - seg.start;
+      seg.start = roundTime(seg.start + shift);
+      seg.end = roundTime(seg.end + shift);
+      if (Array.isArray(seg.words)) {
+        seg.words.forEach(w => {
+          w.start = roundTime(w.start + shift);
+          w.end = roundTime(w.end + shift);
+        });
+      }
     }
 
     if (seg.end <= seg.start + MIN_SEG_LEN) {
@@ -493,6 +509,35 @@ function shiftFollowingSegments(startIndex, delta, durationLimit) {
           seg.end = roundTime(seg.start + TIME_EPS);
         }
       }
+    }
+  }
+}
+
+function rippleShiftWords(seg, startIndex, delta) {
+  if (!seg || !Array.isArray(seg.words) || !delta || Math.abs(delta) < TIME_EPS) return;
+  const words = seg.words;
+  for (let i = startIndex; i < words.length; i++) {
+    const w = words[i];
+    const dur = w.end - w.start;
+
+    // Shift whole word
+    w.start = roundTime(w.start + delta);
+    w.end = roundTime(w.start + dur);
+
+    // Collision check with previous word or segment start
+    const prev = (i > 0) ? words[i - 1] : null;
+    const limitStart = prev ? prev.end : seg.start;
+
+    if (w.start < limitStart) {
+      w.start = limitStart;
+      w.end = roundTime(w.start + dur);
+    }
+
+    // Clamp to segment end
+    if (w.end > seg.end) {
+      w.end = seg.end;
+      // Pull start back if possible to maintain duration
+      w.start = roundTime(Math.max(limitStart, w.end - dur));
     }
   }
 }
@@ -695,8 +740,119 @@ function deleteCurrentLine({ confirm: shouldConfirm = true } = {}) {
   pushHistory();
 }
 
-function nudgeSelected(delta) { if (!currentId) return; const s = findSeg(currentId); if (!s) return; s.start = Math.max(0, s.start + delta); s.end = Math.max(s.start + 0.01, s.end + delta); rebuildRegions(); selectSeg(currentId); setDirty(true); pushHistory(); }
-function trimToCursor(which) { if (!currentId) return; const s = findSeg(currentId); const t = wavesurfer.getCurrentTime(); if (which === 'start') s.start = Math.min(t, s.end - 0.01); else s.end = Math.max(t, s.start + 0.01); rebuildRegions(); selectSeg(currentId); setDirty(true); pushHistory(); }
+function nudgeSelected(delta) {
+  if (!currentId) return;
+  if (currentId.startsWith("W:")) {
+    const parts = currentId.split(":");
+    const seg = findSeg(parts[1]);
+    const wIdx = parseInt(parts[2], 10);
+    if (!seg || !seg.words || !seg.words[wIdx]) return;
+    const word = seg.words[wIdx];
+    const oldStart = word.start;
+    const oldEnd = word.end;
+    const dur = oldEnd - oldStart;
+
+    if ($("#ripple")?.checked) {
+      // Shift whole word
+      word.start = roundTime(word.start + delta);
+      word.end = roundTime(word.start + dur);
+
+      // Handle segment boundaries for this word
+      if (word.start < seg.start) {
+        word.start = seg.start;
+        word.end = roundTime(word.start + dur);
+      }
+      if (word.end > seg.end) {
+        word.end = seg.end;
+        word.start = roundTime(Math.max(seg.start, word.end - dur));
+      }
+
+      const actualDelta = word.start - oldStart;
+      if (Math.abs(actualDelta) > TIME_EPS) {
+        rippleShiftWords(seg, wIdx + 1, actualDelta);
+      }
+    } else {
+      // Old nudge logic (resize/shift within bounds)
+      word.start = Math.max(seg.start, word.start + delta);
+      word.end = Math.max(word.start + 0.005, Math.min(seg.end, word.end + delta));
+    }
+  } else {
+    const s = findSeg(currentId);
+    if (!s) return;
+    const oldStart = s.start;
+    const oldEnd = s.end;
+
+    s.start = Math.max(0, s.start + delta);
+    s.end = Math.max(s.start + 0.01, s.end + delta);
+
+    if ($("#ripple")?.checked) {
+      const actualDelta = s.start - oldStart;
+      if (Math.abs(actualDelta) > TIME_EPS) {
+        const idx = project.segments.findIndex((x) => x.id === s.id);
+        shiftFollowingSegments(idx + 1, actualDelta);
+      }
+    }
+  }
+  rebuildRegions();
+  selectSeg(currentId);
+  setDirty(true);
+  pushHistory();
+}
+
+function trimToCursor(which) {
+  if (!currentId) return;
+  const t = wavesurfer.getCurrentTime();
+  if (currentId.startsWith("W:")) {
+    const parts = currentId.split(":");
+    const seg = findSeg(parts[1]);
+    const wIdx = parseInt(parts[2], 10);
+    if (!seg || !seg.words || !seg.words[wIdx]) return;
+    const word = seg.words[wIdx];
+    const oldStart = word.start;
+    const oldEnd = word.end;
+    const dur = oldEnd - oldStart;
+
+    if (which === 'start') {
+      word.start = Math.max(seg.start, Math.min(t, word.end - 0.005));
+      if ($("#ripple")?.checked) {
+        const delta = word.start - oldStart;
+        if (Math.abs(delta) > TIME_EPS) {
+          word.end = roundTime(oldEnd + delta);
+          rippleShiftWords(seg, wIdx + 1, delta);
+        }
+      }
+    } else {
+      const oldEnd = word.end;
+      word.end = Math.min(seg.end, Math.max(t, word.start + 0.005));
+      if ($("#ripple")?.checked) {
+        const delta = word.end - oldEnd;
+        if (Math.abs(delta) > TIME_EPS) {
+          rippleShiftWords(seg, wIdx + 1, delta);
+        }
+      }
+    }
+  } else {
+    const s = findSeg(currentId);
+    if (!s) return;
+    const oldStart = s.start;
+    const oldEnd = s.end;
+
+    if (which === 'start') s.start = Math.min(t, s.end - 0.01);
+    else s.end = Math.max(t, s.start + 0.01);
+
+    if ($("#ripple")?.checked) {
+      const delta = (which === 'start') ? (s.start - oldStart) : (s.end - oldEnd);
+      if (Math.abs(delta) > TIME_EPS) {
+        const idx = project.segments.findIndex((x) => x.id === s.id);
+        shiftFollowingSegments(idx + 1, delta);
+      }
+    }
+  }
+  rebuildRegions();
+  selectSeg(currentId);
+  setDirty(true);
+  pushHistory();
+}
 function splitAtCursor() {
   if (!currentId) return;
   const s = findSeg(currentId); if (!s) return;
@@ -818,13 +974,39 @@ function handleWordInputChange(evt) {
   let value = parseFloat(input.value);
   if (!Number.isFinite(value)) return;
   if (field === "start") {
-    value = Math.max(seg.start, Math.min(value, seg.words[idx].end - 0.005));
-    seg.words[idx].start = roundTime(value);
+    const oldStart = seg.words[idx].start;
+    const oldEnd = seg.words[idx].end;
+    const dur = oldEnd - oldStart;
+
+    value = Math.max(seg.start, value);
+    if ($("#ripple")?.checked) {
+      const delta = value - oldStart;
+      if (Math.abs(delta) > TIME_EPS) {
+        seg.words[idx].start = roundTime(value);
+        seg.words[idx].end = roundTime(value + dur);
+        if (seg.words[idx].end > seg.end) {
+          seg.words[idx].end = seg.end;
+          seg.words[idx].start = roundTime(Math.max(seg.start, seg.words[idx].end - dur));
+        }
+        rippleShiftWords(seg, idx + 1, delta);
+      }
+    } else {
+      value = Math.min(value, seg.words[idx].end - 0.005);
+      seg.words[idx].start = roundTime(value);
+    }
   } else {
+    const oldEnd = seg.words[idx].end;
     value = Math.min(seg.end, Math.max(value, seg.words[idx].start + 0.005));
     seg.words[idx].end = roundTime(value);
+
+    if ($("#ripple")?.checked) {
+      const delta = seg.words[idx].end - oldEnd;
+      if (Math.abs(delta) > TIME_EPS) {
+        rippleShiftWords(seg, idx + 1, delta);
+      }
+    }
   }
-  input.value = seg.words[idx][field].toFixed(2);
+  refreshWordPanel(seg);
   setDirty(true);
 }
 
@@ -845,6 +1027,61 @@ function setAutoText(seg, txt) {
 
 function handleManualTimeInput(kind, rawValue) {
   if (!project || !currentId) return;
+
+  // Handle Word Manual Input
+  if (currentId.startsWith("W:")) {
+    const parts = currentId.split(":");
+    const segId = parts[1];
+    const wIdx = parseInt(parts[2], 10);
+    const seg = findSeg(segId);
+    if (!seg || !seg.words || !seg.words[wIdx]) return;
+
+    let value = roundTime(Number(rawValue));
+    if (!Number.isFinite(value)) {
+      selectSeg(currentId);
+      return;
+    }
+
+    const word = seg.words[wIdx];
+    const oldStart = word.start;
+    const oldEnd = word.end;
+    const dur = oldEnd - oldStart;
+
+    if (kind === "start") {
+      value = Math.max(seg.start, value);
+      if ($("#ripple")?.checked) {
+        const delta = value - oldStart;
+        if (Math.abs(delta) > TIME_EPS) {
+          word.start = roundTime(value);
+          word.end = roundTime(value + dur);
+          if (word.end > seg.end) {
+            word.end = seg.end;
+            word.start = roundTime(Math.max(seg.start, word.end - dur));
+          }
+          rippleShiftWords(seg, wIdx + 1, delta);
+        }
+      } else {
+        word.start = Math.max(seg.start, Math.min(value, word.end - 0.005));
+      }
+    } else {
+      const oldEnd = word.end;
+      word.end = Math.min(seg.end, Math.max(value, word.start + 0.005));
+      if ($("#ripple")?.checked) {
+        const delta = word.end - oldEnd;
+        if (Math.abs(delta) > TIME_EPS) {
+          rippleShiftWords(seg, wIdx + 1, delta);
+        }
+      }
+    }
+    rebuildRegions();
+    refreshList();
+    selectSeg(currentId);
+    setDirty(true);
+    pushHistory();
+    return;
+  }
+
+  // Handle Segment Manual Input (Legacy)
   const seg = findSeg(currentId);
   if (!seg) return;
 
@@ -922,13 +1159,21 @@ function handleManualTimeInput(kind, rawValue) {
   }
 
   const oldEnd = seg.end;
+  const deltaEnd = newEnd - oldEnd;
+  const deltaStart = newStart - seg.start;
+
   seg.start = newStart;
   seg.end = newEnd;
 
-  if (kind === "end" && $("#ripple")?.checked) {
-    const delta = seg.end - oldEnd;
-    if (Math.abs(delta) > TIME_EPS) {
-      shiftFollowingSegments(idx + 1, delta, durationFinite ? duration : undefined);
+  if ($("#ripple")?.checked) {
+    if (kind === "end") {
+      if (Math.abs(deltaEnd) > TIME_EPS) {
+        shiftFollowingSegments(idx + 1, deltaEnd, durationFinite ? duration : undefined);
+      }
+    } else if (kind === "start") {
+      if (Math.abs(deltaStart) > TIME_EPS) {
+        shiftFollowingSegments(idx + 1, deltaStart, durationFinite ? duration : undefined);
+      }
     }
   }
 
@@ -958,11 +1203,35 @@ async function loadProject() {
     waveColor: '#7aa2f7',
     progressColor: '#9ece6a',
     height: 200,
-    url: `/api/projects/${SLUG}/audio`,
-    minPxPerSec: 60
+    // Request force_cbr=1 to ensure the backend serves a perfectly seekable CBR transcode
+    url: `/api/projects/${SLUG}/audio?force_cbr=1`,
+    minPxPerSec: 60,
+    // v7 prefers defaults, WebAudio is built-in
   });
 
-  timeline = wavesurfer.registerPlugin(WaveSurfer.Timeline.create({ container: '#timeline' }));
+  timeline = wavesurfer.registerPlugin(WaveSurfer.Timeline.create({ 
+    container: '#timeline',
+    // Make pips more granular as we zoom in
+    timeInterval: (pxPerSec) => {
+      if (pxPerSec >= 15000) return 0.01;
+      if (pxPerSec >= 8000) return 0.02;
+      if (pxPerSec >= 3000) return 0.05;
+      if (pxPerSec >= 1000) return 0.1;
+      if (pxPerSec >= 500) return 0.5;
+      return 1;
+    },
+    primaryLabelInterval: (pxPerSec) => {
+      if (pxPerSec >= 15000) return 10; // Label every 0.1s
+      if (pxPerSec >= 3000) return 5;
+      return 5;
+    },
+    secondaryLabelInterval: (pxPerSec) => {
+      if (pxPerSec >= 10000) return 1;
+      if (pxPerSec >= 5000) return 2;
+      if (pxPerSec >= 1000) return 5;
+      return 1;
+    }
+  }));
   regions = wavesurfer.registerPlugin(WaveSurfer.Regions.create());
 
   // unified timeupdate (clock + loop current segment)
@@ -990,8 +1259,24 @@ async function loadProject() {
       const wIdx = parseInt(parts[2], 10);
       const seg = findSeg(segId);
       if (seg && seg.words && seg.words[wIdx]) {
-        seg.words[wIdx].start = Math.round(reg.start * 1000) / 1000;
-        seg.words[wIdx].end = Math.round(reg.end * 1000) / 1000;
+        const oldStart = seg.words[wIdx].start;
+        const oldEnd = seg.words[wIdx].end;
+        const newStart = Math.round(reg.start * 1000) / 1000;
+        const newEnd = Math.round(reg.end * 1000) / 1000;
+
+        seg.words[wIdx].start = newStart;
+        seg.words[wIdx].end = newEnd;
+
+        if ($("#ripple")?.checked) {
+          const delta = newStart - oldStart;
+          if (Math.abs(delta) > TIME_EPS) {
+            // Ripple the current word's end AND all following words
+            seg.words[wIdx].end = roundTime(oldEnd + delta);
+            rippleShiftWords(seg, wIdx + 1, delta);
+            rebuildRegions(); // Need full rebuild to update other word regions
+          }
+        }
+
         setDirty(true);
         // Update sidebar input if this word is selected
         if (currentId === reg.id) {
@@ -1005,28 +1290,42 @@ async function loadProject() {
 
     // Handle Segment Updates (Legacy)
     const seg = findSeg(reg.id); if (!seg) return;
-    const q10 = (x) => Math.max(0, Math.round(x * 100) / 100);
 
     const oldStart = seg.start;
-    let newStart = q10(reg.start);
-    let newEnd = q10(reg.end);
+    const oldEnd = seg.end;
+    const newStart = roundTime(reg.start);
+    const newEnd = roundTime(reg.end);
 
-    if (newEnd < newStart + 0.01) newEnd = newStart + 0.01;
+    const deltaStart = newStart - oldStart;
+    const deltaEnd = newEnd - oldEnd;
 
-    const idx = project.segments.findIndex(s => s.id === seg.id);
-    const prev = project.segments[idx - 1];
-    const next = project.segments[idx + 1];
-    if (prev) newStart = Math.max(newStart, q10(prev.end));
-    if (next) newEnd = Math.min(newEnd, q10(next.start));
+    // Determine which handle was moved to calculate ripple delta
+    // If start moved, we shift subsequent lines by deltaStart
+    // If only end moved (resize), we shift subsequent lines by deltaEnd
+    let rippleDelta = 0;
+    if (Math.abs(deltaStart) > TIME_EPS) {
+      rippleDelta = deltaStart;
+    } else if (Math.abs(deltaEnd) > TIME_EPS) {
+      rippleDelta = deltaEnd;
+    }
 
-    seg.start = newStart; seg.end = newEnd;
+    seg.start = newStart;
+    seg.end = newEnd;
 
-    if ($("#ripple")?.checked) {
-      const delta = newStart - oldStart; let hit = false;
-      for (const s of project.segments) {
-        if (s.id === seg.id) { hit = true; continue; }
-        if (hit) { s.start = q10(s.start + delta); s.end = q10(s.end + delta); }
-      }
+    // Shift words ONLY if the whole segment moved (start and end shifted by same amount)
+    // If just resizing (start or end changed independently), words should stay in absolute time.
+    const isMove = Math.abs(deltaStart - deltaEnd) < 0.001 && Math.abs(deltaStart) > TIME_EPS;
+
+    if (isMove && Array.isArray(seg.words)) {
+      seg.words.forEach(w => {
+        w.start = roundTime(w.start + deltaStart);
+        w.end = roundTime(w.end + deltaStart);
+      });
+    }
+
+    if ($("#ripple")?.checked && Math.abs(rippleDelta) > TIME_EPS) {
+      const idx = project.segments.findIndex(s => s.id === seg.id);
+      shiftFollowingSegments(idx + 1, rippleDelta);
       rebuildRegions();
     }
 
@@ -1048,7 +1347,10 @@ async function loadProject() {
     // select the segment but DON'T auto-jump to its start
     selectSeg(r.id, false);
     // place the playhead at the clicked time
-    if (Number.isFinite(t)) wavesurfer.setTime(Math.max(0, t));
+    if (Number.isFinite(t)) {
+      wavesurfer.setTime(Math.max(0, t));
+      console.log(`[Editor] Seeked to region-click: ${t.toFixed(3)}s`);
+    }
     // if already playing, continue playback from the clicked position
     if (wavesurfer.isPlaying && wavesurfer.isPlaying()) wavesurfer.play();
   });
@@ -1093,7 +1395,6 @@ async function loadProject() {
   }
 
   wavesurfer.on('ready', () => {
-
     rebuildRegions();
     ensureValidSelection();
     refreshList();
@@ -1186,7 +1487,24 @@ async function loadProject() {
 
 
 // Helper for zoom value across WS versions
-const getZoom = () => (wavesurfer?.getOptions?.().minPxPerSec ?? wavesurfer?.params?.minPxPerSec ?? 60);
+let currZoom = 60;
+const getZoom = () => currZoom;
+
+function applyZoom(val) {
+  currZoom = Math.max(5, Math.min(10000, val));
+  if (wavesurfer) wavesurfer.zoom(currZoom);
+  updateZoomStatus();
+}
+
+function updateZoomStatus() {
+  const st = document.getElementById("status");
+  if (st) {
+    st.textContent = `Zoom: ${Math.round(currZoom)} px/s`;
+    // clear after a bit unless we keep zooming
+    if (window._zoomTimer) clearTimeout(window._zoomTimer);
+    window._zoomTimer = setTimeout(() => { if (st.textContent.startsWith("Zoom:")) st.textContent = ""; }, 2000);
+  }
+}
 
 keyHandler = (e) => {
   const activeTag = (document.activeElement?.tagName || "").toLowerCase();
@@ -1236,8 +1554,12 @@ keyHandler = (e) => {
   }
 
   // zoom (note: "+" often reports as "=", so handle both)
-  if (e.key === "+" || (e.key === "=" && e.shiftKey)) wavesurfer?.zoom?.(getZoom() + 20);
-  if (e.key === "-") wavesurfer?.zoom?.(Math.max(20, getZoom() - 20));
+  if (e.key === "+" || (e.key === "=" && e.shiftKey)) {
+    applyZoom(currZoom * 1.5);
+  }
+  if (e.key === "-") {
+    applyZoom(currZoom / 1.5);
+  }
 
   // precise nudges
   if (e.key === "ArrowLeft") nudgeSelected(e.ctrlKey ? -0.001 : (e.shiftKey ? -0.05 : -0.01));
@@ -1306,14 +1628,13 @@ function wireButtonsOnce() {
   $("#mobileNext")?.addEventListener("click", handleNext);
 
   // Zoom
-  const getZoom = () => (wavesurfer?.params?.minPxPerSec ?? 60);
   $("#zoomIn")?.addEventListener("click", (e) => {
     e.preventDefault();
-    if (wavesurfer) wavesurfer.zoom(getZoom() + 20);
+    applyZoom(currZoom * 1.5);
   });
   $("#zoomOut")?.addEventListener("click", (e) => {
     e.preventDefault();
-    if (wavesurfer) wavesurfer.zoom(Math.max(20, getZoom() - 20));
+    applyZoom(currZoom / 1.5);
   });
 
 

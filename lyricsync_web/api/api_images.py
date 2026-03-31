@@ -18,9 +18,10 @@ router = APIRouter(prefix="/api/image", tags=["image"])
 
 
 class PipelineControlRequest(BaseModel):
-    model_config = {"protected_namespaces": ()}
     model_id: str
     precision: PrecisionT = "fp16"
+    vae_id: str | None = None
+    text_encoder_id: str | None = None
 
 
 @router.post("/generate", response_model=GenResponse)
@@ -32,6 +33,23 @@ async def generate(request: Request):
 
     try:
         req = GenRequest(**payload)
+        
+        # Apply style hints from app.projects
+        from app.projects import STYLE_HINTS, SUB_STYLE_HINTS
+        
+        hints = []
+        if req.style and req.style in STYLE_HINTS:
+            hints.append(STYLE_HINTS[req.style])
+        if req.sub_style and req.sub_style in SUB_STYLE_HINTS:
+            hints.append(SUB_STYLE_HINTS[req.sub_style])
+            
+        if hints:
+            prefix = ", ".join(hints)
+            req.prompt = f"{prefix}, {req.prompt}"
+            logger.info("Applied style hints to job %s prompt: %s", req.slug, req.prompt)
+
+        logger.info("Received generation request: slug=%s model=%s refine=%s strength=%s", 
+                    req.slug, req.model_id, req.enable_refinement, req.refinement_strength)
     except ValidationError as exc:
         logger.warning("Invalid image payload: %s", exc)
         raise HTTPException(status_code=400, detail=exc.errors())
@@ -40,6 +58,7 @@ async def generate(request: Request):
         raise HTTPException(status_code=400, detail="slug and model_id are required")
 
     job_id = str(uuid.uuid4())
+    logger.info("Prompts for job %s: positive=%.64s... negative=%.64s...", job_id, req.prompt, req.negative_prompt)
     JOBS[job_id] = {"status": "queued", "progress": "waiting for GPU worker"}
     await JOB_QUEUE.put((job_id, req.dict()))
     logger.info("Queued job %s for slug=%s", job_id, req.slug)
@@ -62,7 +81,12 @@ async def ping():
 @router.post("/pipeline/preload")
 async def pipeline_preload(req: PipelineControlRequest):
     try:
-        await ensure_pipeline_loaded(req.model_id, req.precision)
+        await ensure_pipeline_loaded(
+            req.model_id, 
+            req.precision, 
+            req.vae_id, 
+            req.text_encoder_id
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "model_id": req.model_id, "precision": req.precision}
@@ -71,7 +95,12 @@ async def pipeline_preload(req: PipelineControlRequest):
 @router.post("/pipeline/release")
 async def pipeline_release(req: PipelineControlRequest):
     try:
-        released = await release_pipeline(req.model_id, req.precision)
+        released = await release_pipeline(
+            req.model_id, 
+            req.precision, 
+            req.vae_id, 
+            req.text_encoder_id
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -83,5 +112,10 @@ async def pipeline_release(req: PipelineControlRequest):
 
 
 @router.get("/pipeline/status")
-async def pipeline_status(model_id: str, precision: PrecisionT = "fp16"):
-    return {"loaded": is_pipeline_loaded(model_id, precision)}
+async def pipeline_status(
+    model_id: str, 
+    precision: PrecisionT = "fp16",
+    vae_id: str | None = None,
+    text_encoder_id: str | None = None,
+):
+    return {"loaded": is_pipeline_loaded(model_id, precision, vae_id, text_encoder_id)}
