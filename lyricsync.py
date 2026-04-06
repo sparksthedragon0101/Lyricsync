@@ -31,6 +31,8 @@ import shutil
 import subprocess, tempfile
 import sys
 import glob
+import gc
+import torch
 
 # --- NVIDIA DLL Path Fix (for ctranslate2 / whisperx on Windows) ---
 if sys.platform == "win32":
@@ -1043,6 +1045,7 @@ def _do_transcribe(audio_path: str,
 
     audio = whisperx.load_audio(audio_path)
     model = whisperx.load_model(model_size, device=resolved_device, compute_type=compute)
+    align_model = None
     transcribe_kwargs = {}
     if lang_arg:
         transcribe_kwargs["language"] = lang_arg
@@ -1104,6 +1107,18 @@ def _do_transcribe(audio_path: str,
             pass
 
     print(f"[WhisperX] Segments: {len(segs)}  Words: {len(words)}  Model: {model_size} ({resolved_device})")
+
+    # --- Memory Cleanup ---
+    if resolved_device == "cuda":
+        try:
+            del model
+            del align_model
+            gc.collect()
+            torch.cuda.empty_cache()
+            print("[WhisperX] CUDA memory cleared.")
+        except Exception as e:
+            print(f"[WhisperX] Warning: Could not clear CUDA memory: {e}")
+
     return words, segs, total
 
 
