@@ -5,6 +5,7 @@ import re
 import orjson
 import aiofiles
 import textwrap
+from contextlib import asynccontextmanager
 
 import socket
 import logging
@@ -279,7 +280,16 @@ class StoragePathRequest(BaseModel):
     kind: str
     path: str
 
-app = FastAPI(title="LyricSync Server")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    await start_worker()
+    yield
+    # Shutdown (if any)
+    # await stop_worker()
+
+app = FastAPI(title="LyricSync Server", lifespan=lifespan)
+
 app.mount("/static", StaticFiles(directory=str((BASE_DIR / "static").resolve())), name="static")
 templates = Jinja2Templates(directory=str((BASE_DIR / "templates").resolve()))
 
@@ -294,9 +304,6 @@ app.include_router(models_router)
 app.include_router(projects_router)
 
 
-@app.on_event("startup")
-async def _startup():
-    await start_worker()
 
 def _should_redirect_to_project(request: Request) -> bool:
     """Determine whether a create request wants an HTML redirect."""
@@ -1975,7 +1982,7 @@ async def api_render(
     # Map 'karaoke' style to valid backend style + flag
     eff_style = style
     if style == "karaoke":
-        eff_style = "burn-srt"
+        eff_style = "karaoke"
         word_highlight = True
 
     # 4) Build base command
@@ -1993,6 +2000,7 @@ async def api_render(
         "--out-srt", str(srt_path),
         "--burn-subs", str(srt_path),
         "--preview-out", str(preview_out),
+        "--overwrite",
         "--style", eff_style,
         "--text-theme", text_theme,
         "--font", font,
@@ -2073,9 +2081,9 @@ async def api_render(
     if title_from_mp3 or (show_title and use_mp3_title):
         cmd += ["--title-from-mp3"]
 
-    if word_highlight:
-        cmd.append("--enable-word-highlight")
+    if word_highlight or eff_style == "karaoke":
         cmd.extend(["--words-cache", str(p.dir / "words.json")])
+
         
     if show_end_card:
         if end_card_text is None or not str(end_card_text).strip():

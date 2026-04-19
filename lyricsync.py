@@ -33,6 +33,7 @@ import sys
 import glob
 import gc
 import torch
+import json
 
 # --- NVIDIA DLL Path Fix (for ctranslate2 / whisperx on Windows) ---
 if sys.platform == "win32":
@@ -1659,8 +1660,6 @@ def make_preview(
     force_res: str = "1920:1080",
     thanks_text: str | None = "Thank You for Watching",
     thanks_seconds: float = 5.0,
-    endcard_color: str = "#FFFFFF",
-    endcard_border_color: str = "#000000",
     effect: str = "none",
     effect_strength: float = 0.08,
     effect_cycle: float = 12.0,
@@ -2735,7 +2734,7 @@ def build_title_ass(
 
 
 
-import json
+
 
 def save_words_json(words: List[Word], path: str):
     data = [asdict(w) for w in words]
@@ -3011,177 +3010,103 @@ def build_karaoke_ass(
         f.write("\n".join(header + events) + "\n")
 
 
-# ---------- Main ----------
-
 def main() -> None:
-    if "--debug-metadata" in sys.argv:
-        tmp = argparse.ArgumentParser(add_help=False)   # use the top-level import
-        tmp.add_argument("--debug-metadata", metavar="AUDIO_PATH")
-        args, _ = tmp.parse_known_args()
-        title = read_audio_title(args.debug_metadata) or "final.mp4"
-        print(f"Detected Title: {title}")
-        raise SystemExit(0)
-
-        
-    ap = argparse.ArgumentParser(description="Minimal lyric sync with auto VAD retry + segment fallback")
-    ap.add_argument("--audio", required=True,
-                    help="Audio file (mp3/wav/etc.)")
-    ap.add_argument("--lyrics", required=True,
-                    help="Official lyrics .txt (one line per lyric)")
-    ap.add_argument("--out-srt", default="synced_lyrics.srt",
-                    help="Output SRT path")
-    ap.add_argument("--model-size", default="large-v2",
-                    help="WhisperX model preset (tiny/base/small/medium/large-v2/large-v3)")
-    ap.add_argument("--language", default="auto",
-                    help="Language code or autodetect if omitted")
-    ap.add_argument("--preview-image", dest="preview_image", action="append", default=[],
-                    metavar="IMG", help="Optional image(s) (jpg/png) for preview video; repeat for multiples")
-    ap.add_argument("--image-clip-seconds", type=float, default=None,
-                    help="Seconds to display each image (multi-image preview). Leave unset to auto spread.")
-    ap.add_argument("--image-fade-seconds", type=float, default=None,
-                    help="Seconds for crossfade between images (auto if omitted).")
-    ap.add_argument("--image-playback", choices=["story", "loop"], default="story",
-                    help="story = play images sequentially once, loop = cycle through images until audio ends.")
-    ap.add_argument("--image-slots", type=str, default=None,
-                    help="JSON string of timed image slots for story mode.")
-    ap.add_argument("--preview-out", default="preview.mp4",
-                    help="Preview video output path")
-    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
-                    help="Inference device")
-    ap.add_argument("--compute-type", default="int8",
-                    help="CTranslate2 compute_type: int8/float16/…")
-    ap.add_argument("--align-mode", default="auto", choices=["auto", "words", "segments"], help="Alignment mode")
-    ap.add_argument("--resize", type=int, default=None,
-                    help="Resize preview width (e.g., 1280)")
-    ap.add_argument("--burn-subs", default=None,
-                    help="Path to .srt to burn into the preview (optional)")
-    ap.add_argument("--vad", default="auto", choices=["auto","on","off"],
-                    help="Voice activity detection: auto/on/off")
-    ap.add_argument("--no-burn", action="store_true",
-                    help="Do NOT burn the final SRT into the video preview (default is to burn it).")
-    ap.add_argument("--force-res", type=str, default="1920:1080",
-                    help="Force output resolution (e.g., 1920:1080, 1280:720).")
-    ap.add_argument("--srt-only", action="store_true",
-                    help="Skip transcription/align; use the provided SRT as the caption source.")
-    ap.add_argument("--no-subs", action="store_true",
-                    help="Do not transcribe or render any subtitles; produce video from image + audio only.")
-    ap.add_argument("--shift-seconds", type=float, default=0.0,
-                    help="If > 0, also write a second SRT shifted by this many seconds.")
-    ap.add_argument("--out-srt-shifted", default=None,
-                    help="Path for the shifted SRT. If omitted and shift-seconds>0, derives from --out-srt (e.g., *_shifted.srt).")
-    ap.add_argument("--thanks-text", default="Thank You for Watching",
-                    help="Text to display as an end card overlay.")
-    ap.add_argument("--thanks-seconds", type=float, default=5.0,
-                    help="How long the end card should remain on screen at the end.")
-    ap.add_argument("--title-seconds", type=float, default=3.0,
-                    help="Duration (in seconds) to display the title card when enabled.")
-    ap.add_argument("--enable-word-highlight", action="store_true",
-                    help="Reserved flag for future WhisperX per-word highlight overlays.")
-    ap.add_argument("--words-cache", default=None,
-                    help="Path to JSON file to load/save word timings (caches transcription).")
-
-              # ---- style selection ----
-    ap.add_argument("--style", default="burn-srt", choices=["none", "still", "burn-srt", "rainbow-cycle", "credits"],
-                    help="Rendering style for the preview video/output.")
-    ap.add_argument("--font", default="Arial",
-                    help="Subtitle font for ASS styles.")
-    ap.add_argument("--font-size", type=int, default=20,
-                    help="Subtitle font size.")
-    ap.add_argument("--font-file", default=None, 
-                    help="Path to .ttf/.otf font")
-    ap.add_argument("--outline", type=int, default=2,
-                    help="Subtitle outline thickness (0-5).")
-    ap.add_argument("--align", type=int, default=2,
-                    help="ASS alignment 1-9 (2=bottom-center).")
-    ap.add_argument("--margin-v", type=int, default=20,
-                    help="Vertical margin (pixels).")
-
-    # rainbow-cycle params
-    ap.add_argument("--cycle-seconds", type=float, default=3.0,
-                    help="Seconds per full hue cycle for rainbow style.")
-    ap.add_argument("--saturation", type=float, default=1.0,
-                    help="Hue saturation (0-1).")
-    ap.add_argument("--brightness", type=float, default=1.0,
-                    help="Hue value/brightness (0-1).")
-    ap.add_argument("--phase-stagger", type=float, default=0.0,
-                    help="Phase offset (seconds) to stagger hue start per line (0 = none).")
-
-    # Credits style params
-
-    ap.add_argument("--line-spacing", type=float, default=1.2,
-                    help="Line spacing multiplier (credits)")
-    ap.add_argument("--scroll-pad", type=int, default=120,
-                    help="Extra pixels above/below screen for smooth entry/exit")
-    ap.add_argument("--text-theme", default=None,
-                    help="Name or slug of a saved font theme (managed via the LyricSync GUI).")
-
-    ap.add_argument("--keep-prep", action="store_true",
-                    help="Keep the temporary preprocessed WAV used for transcription (for debugging).")
-     
-     # Get Stems
+    ap = argparse.ArgumentParser(description="LyricSync: WhisperX transcription + high-end video preview generation")
     
-    ap.add_argument("--separate", choices=["none", "vocals"], default="none",
-                    help="If 'vocals', isolate a vocal stem before ASR (requires demucs installed).")
-    ap.add_argument("--separator", choices=["demucs"], default="demucs",
-                    help="Separator backend to use when --separate!=none.")
-    ap.add_argument("--demucs-model", default="htdemucs",
-                    help="Demucs model name (e.g., htdemucs, htdemucs_ft, mdx_extra, etc.).")
-    ap.add_argument("--demucs-device", default="auto",
-                    help="'cuda'|'cpu'|'auto' for separation backend.")
-    ap.add_argument("--engine", default="whisperx", choices=["whisperx", "mfa"],
-                    help="Alignment engine: 'whisperx' (ASR + align) or 'mfa' (Montreal Forced Aligner, needs lyrics).")
-    ap.add_argument(
-        "--prep-audio",
-        choices=["auto", "off", "center", "bandpass", "nr", "speech"],
-        default="auto",
-        help=("Preprocess audio for ASR. "
-              "'auto' applies a sensible chain (center+bandpass+nr+dynaudnorm). "
-              "'center' = mono mid; 'bandpass' = speech band; 'nr' = light noise reduction; "
-              "'speech' = minimal ASR-focused chain.")
-    )
-    ap.add_argument(
-        "--title-from-mp3",
-        action="store_true",
-        help="Use embedded audio title metadata (ID3/MP4/etc.) for the title card text."    )
+    # --- Core Input/Output ---
+    g_io = ap.add_argument_group("Core Input/Output")
+    g_io.add_argument("--audio", required=True, help="Audio file (mp3/wav/etc.)")
+    g_io.add_argument("--lyrics", required=True, help="Official lyrics .txt (one line per lyric)")
+    g_io.add_argument("--out-srt", default="synced_lyrics.srt", help="Output SRT path")
+    g_io.add_argument("--preview-out", default="preview.mp4", help="Preview video output path")
+    g_io.add_argument("--overwrite", action="store_true", help="Overwrite existing output files")
+    g_io.add_argument("--words-cache", default=None, help="Path to JSON file to load/save word timings")
+    g_io.add_argument("--burn-subs", default=None, help="Force burning specific SRT/ASS path")
+    g_io.add_argument("--debug-metadata", metavar="AUDIO_PATH", help="Print audio metadata and exit")
 
-    ap.add_argument(
-        "--debug-metadata",
-        metavar="AUDIO_PATH",
-        help="Print detected audio title metadata to stdout for quick debug and exit."    )
-    ap.add_argument("--font-color", default="#FFFFFF", help="Hex color for subtitle text, e.g. #FFFFFF")
-    ap.add_argument("--outline-color", default="#000000", help="Hex color for subtitle outline, e.g. #000000")
-    ap.add_argument("--thanks-color", default="#FFFFFF", help="Hex color for end-card text")
-    ap.add_argument("--thanks-border-color", default="#000000", help="Hex color for end-card border")
+    # --- Transcription & Alignment ---
+    g_asr = ap.add_argument_group("Transcription & Alignment")
+    g_asr.add_argument("--engine", default="whisperx", choices=["whisperx", "mfa"], help="Alignment engine")
+    g_asr.add_argument("--model-size", default="large-v3", help="WhisperX model size")
+    g_asr.add_argument("--language", default="auto", help="Language code")
+    g_asr.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Inference device")
+    g_asr.add_argument("--compute-type", default="int8", help="CTranslate2 compute_type")
+    g_asr.add_argument("--vad", default="auto", choices=["auto","on","off"], help="VAD filter mode")
+    g_asr.add_argument("--align-mode", default="auto", choices=["auto", "words", "segments"], help="Alignment mode")
+    g_asr.add_argument("--srt-only", action="store_true", help="Skip transcription; use provided SRT")
+    g_asr.add_argument("--no-subs", action="store_true", help="Produce video without any subtitles")
+    g_asr.add_argument("--shift-seconds", type=float, default=0.0, help="Shift SRT timestamps")
+    g_asr.add_argument("--out-srt-shifted", default=None, help="Path for shifted SRT")
 
-    # --- visual effects ---
-    ap.add_argument("--effect", default="none", choices=effect_choices(),
-                    help="Visual effect applied to the background (e.g. 'zoom').")
-    ap.add_argument("--effect-strength", type=float, default=0.08,
-                    help="Zoom amplitude for --effect=zoom (0.03..0.15 good range).")
-    ap.add_argument("--effect-cycle", type=float, default=12.0,
-                    help="Seconds for a full in→out cycle for --effect=zoom.")
-    ap.add_argument("--effect-zoom", type=float, default=None,
-                    help="Ken Burns zoom amplitude override (0.01-0.6 suggested).")
-    ap.add_argument("--effect-pan", type=float, default=None,
-                    help="Ken Burns pan amount override (0-1 suggested).")
-    ap.add_argument("--fps", type=int, default=30,
-                    help="Preview render FPS (used by image-based effects).")
+    # --- Preprocessing & Separation ---
+    g_prep = ap.add_argument_group("Preprocessing")
+    g_prep.add_argument("--prep-audio", choices=["auto", "off", "center", "bandpass", "nr", "speech"], default="auto", help="Preprocess audio for ASR")
+    g_prep.add_argument("--separate", choices=["none", "vocals"], default="none", help="Isolate vocals before ASR")
+    g_prep.add_argument("--separator", choices=["demucs"], default="demucs", help="Separator backend")
+    g_prep.add_argument("--demucs-model", default="htdemucs", help="Demucs model name")
+    g_prep.add_argument("--keep-prep", action="store_true", help="Keep temporary preprocessed WAV")
 
-    # --- video encoding ---
-    ap.add_argument("--vcodec", default="libx264",
-                    help="Video encoder (e.g. libx264, libx265, h264_nvenc, hevc_nvenc, qsv, auto).")
-    ap.add_argument("--vpreset", default="veryfast",
-                    help="Encoder preset (e.g. ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow).")
-    ap.add_argument("--vcrf", type=int, default=20,
-                    help="Constant Rate Factor (0-51, lower is better quality). Only for libx26x.")
-    ap.add_argument("--vbitrate", default=None,
-                    help="Constant bitrate (e.g. 5M) for GPU encoders that don't support CRF well.")
+    # --- Visual Style & Layout ---
+    g_style = ap.add_argument_group("Visual Style & Layout")
+    g_style.add_argument("--style", default="burn-srt", 
+                        choices=["none", "still", "burn-srt", "rainbow-cycle", "credits", "karaoke"],
+                        help="Rendering style for the preview")
+    g_style.add_argument("--text-theme", default=None, help="Saved font theme name")
+    g_style.add_argument("--font", default="Arial", help="Subtitle font")
+    g_style.add_argument("--font-size", type=int, default=20, help="Font size")
+    g_style.add_argument("--font-file", default=None, help="Path to .ttf/.otf font")
+    g_style.add_argument("--font-color", default="#FFFFFF", help="Hex text color")
+    g_style.add_argument("--outline", type=int, default=2, help="Outline thickness")
+    g_style.add_argument("--outline-color", default="#000000", help="Hex outline color")
+    g_style.add_argument("--align", type=int, default=2, help="ASS alignment (1-9)")
+    g_style.add_argument("--margin-v", type=int, default=20, help="Vertical margin")
+    g_style.add_argument("--force-res", type=str, default="1920:1080", help="Output resolution")
+    g_style.add_argument("--no-burn", action="store_true", help="Do not burn subtitles into video")
 
+    # --- Style-Specific Params ---
+    g_spec = ap.add_argument_group("Style-Specific Parameters")
+    g_spec.add_argument("--cycle-seconds", type=float, default=3.0, help="Rainbow cycle speed")
+    g_spec.add_argument("--saturation", type=float, default=1.0, help="Rainbow saturation")
+    g_spec.add_argument("--brightness", type=float, default=1.0, help="Rainbow brightness")
+    g_spec.add_argument("--phase-stagger", type=float, default=0.0, help="Rainbow phase stagger")
+    g_spec.add_argument("--line-spacing", type=float, default=1.2, help="Credits line spacing")
+    g_spec.add_argument("--scroll-pad", type=int, default=120, help="Credits scroll padding")
 
+    # --- Overlays (Title & End Card) ---
+    g_ov = ap.add_argument_group("Overlays")
+    g_ov.add_argument("--title-from-mp3", action="store_true", help="Use audio metadata for title")
+    g_ov.add_argument("--title-seconds", type=float, default=3.0, help="Title card duration")
+    g_ov.add_argument("--thanks-text", default="Thank You for Watching", help="End card text")
+    g_ov.add_argument("--thanks-seconds", type=float, default=5.0, help="End card duration")
+    g_ov.add_argument("--thanks-color", default="#FFFFFF", help="End card text color")
+    g_ov.add_argument("--thanks-border-color", default="#000000", help="End card border color")
+
+    # --- Multi-Image / Story Mode ---
+    g_img = ap.add_argument_group("Multi-Image / Story Mode")
+    g_img.add_argument("--preview-image", dest="preview_image", action="append", default=[], help="Image(s) for background")
+    g_img.add_argument("--image-clip-seconds", type=float, default=None, help="Seconds per image")
+    g_img.add_argument("--image-fade-seconds", type=float, default=None, help="Crossfade duration")
+    g_img.add_argument("--image-playback", choices=["story", "loop"], default="story", help="Playback mode")
+    g_img.add_argument("--image-slots", type=str, default=None, help="JSON string of timed image slots")
+
+    # --- Video Effects & Encoding ---
+    g_enc = ap.add_argument_group("Video Effects & Encoding")
+    g_enc.add_argument("--effect", default="none", choices=effect_choices(), help="Background effect")
+    g_enc.add_argument("--effect-strength", type=float, default=0.08, help="Effect strength")
+    g_enc.add_argument("--effect-cycle", type=float, default=12.0, help="Effect cycle duration")
+    g_enc.add_argument("--effect-zoom", type=float, default=None, help="Zoom override")
+    g_enc.add_argument("--effect-pan", type=float, default=None, help="Pan override")
+    g_enc.add_argument("--fps", type=int, default=30, help="Preview FPS")
+    g_enc.add_argument("--vcodec", default="libx264", help="Video encoder")
+    g_enc.add_argument("--vpreset", default="veryfast", help="Encoder preset")
+    g_enc.add_argument("--vcrf", type=int, default=20, help="Constant Rate Factor")
+    g_enc.add_argument("--vbitrate", default=None, help="Constant bitrate")
     
     args = ap.parse_args()
-    if getattr(args, "enable_word_highlight", False):
-        print("[WhisperX] --enable-word-highlight acknowledged (render integration pending).")
+    
+    is_karaoke = args.style == "karaoke"
+
+    
     applied_theme = _apply_text_theme_to_args(args)
     if applied_theme:
         print(f"[INFO] Applied text theme '{applied_theme.get('name') or args.text_theme}'")
@@ -3198,12 +3123,6 @@ def main() -> None:
 
     if not os.path.isabs(args.out_srt):
         args.out_srt = os.path.join(preview_dir, os.path.basename(args.out_srt))
-
-        
-    if args.debug_metadata:
-        title = read_audio_title(args.debug_metadata) or "final.mp4"
-        print(f"Detected Title: {title}")
-        raise SystemExit(0)
 
     # Decide which font expression to use
     if args.font_file:
@@ -3356,9 +3275,9 @@ def main() -> None:
 
     if loaded_words:
         print(f"    Loaded {len(words)} words.")
-    elif args.srt_only and not getattr(args, "enable_word_highlight", False):
+    elif args.srt_only and not is_karaoke:
         # Only skip if we are NOT doing karaoke. verify?
-        # If enable_word_highlight is ON, we NEED words.
+        # If is_karaoke is ON, we NEED words.
         # If we didn't load them, we MUST transcribe.
         print("SRT-only mode: skipping transcription.")
         words, segs = [], []
@@ -3376,7 +3295,7 @@ def main() -> None:
         # Force karaoke mode for MFA if not explicitly disabled
         if not args.no_subs:
             print("[MFA] Enabling word highlighting for karaoke output.")
-            setattr(args, "enable_word_highlight", True)
+            is_karaoke = True
     else:
         print(f"Transcribing (VAD={vad_mode}).")
         words, segs, total_dur = _do_transcribe(
@@ -3398,7 +3317,6 @@ def main() -> None:
     # If karaoke is enabled, we aggressively try to get the best transcription (more words).
     # Skip VAD retry when using MFA (forced alignment doesn't use VAD)
     should_retry = False
-    is_karaoke = getattr(args, "enable_word_highlight", False)
     
     if (not loaded_words) and (not args.srt_only) and (not use_mfa) and vad_mode == "auto":
         if is_karaoke:
@@ -3451,7 +3369,7 @@ def main() -> None:
         print("Aligning lyrics…")
         if args.align_mode == "segments":
             timed_lines = align_lines_to_segments(segs, lyric_lines)
-        elif args.align_mode == "words" or getattr(args, "enable_word_highlight", False):
+        elif args.align_mode == "words" or is_karaoke:
              # Force word alignment if karaoke requested
             spans, scores = greedy_align_lines_to_words(words, lyric_lines)
             timed_lines = word_spans_to_timed_lines(words, lyric_lines, spans)
@@ -3503,7 +3421,7 @@ def main() -> None:
     # Default: burn the generated SRT (or the user SRT in srt-only), unless --no-burn
     burn_path = None
     if not args.no_subs: # Only if we intend to have subtitles at all
-        if getattr(args, "enable_word_highlight", False):
+        if is_karaoke:
              print("Generating Karaoke ASS...")
              karaoke_ass = os.path.splitext(args.out_srt)[0] + ".karaoke.ass"
              build_karaoke_ass(
